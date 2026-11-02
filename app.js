@@ -348,7 +348,7 @@ function handle(o, live){
 const topic=decodeURIComponent(location.hash.slice(1)).trim();
 const LIVE=/^[\w-]{1,64}$/.test(topic);
 let sim=!LIVE;
-document.getElementById('mode').textContent=LIVE?'● 實時 Live':'模擬 Demo';
+document.getElementById('mode').textContent=LIVE?'● v3 連線中…':'模擬 Demo';
 document.getElementById('feedsrc').textContent=LIVE?'ntfy':'Simulated';
 if(LIVE){ let lastId='12h', seen=new Set(), first=true;
   const setMode=t=>{ document.getElementById('mode').textContent=t; };
