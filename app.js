@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { OrbitControls } from './vendor/OrbitControls.js?v=20261102s';
-import { createCollision } from './collision.js?v=20261102s';
-import { createPickleController, COURT, courtObstacles, courtLines, playerSlots, WORK_PRIORITY } from './pickleball.js?v=20261102s';
-import { createPickleFX } from './pickleball-fx.js?v=20261102s';
+import { OrbitControls } from './vendor/OrbitControls.js?v=20261102t';
+import { createCollision } from './collision.js?v=20261102t';
+import { createPickleController, COURT, courtObstacles, courtLines, playerSlots, WORK_PRIORITY } from './pickleball.js?v=20261102t';
+import { createPickleFX } from './pickleball-fx.js?v=20261102t';
+import { createBotLabelSelection } from './bot-label.mjs?v=20261102t';
 
 /* ---------- config ---------- */
 const STATUS = {
@@ -39,6 +40,20 @@ const STEPS = {
  YouTube:['研究熱門題材','寫短片劇本','生成 AI 畫面','睇頻道數據','剪片字幕'],
 };
 const norm = s => (s||'').toLowerCase().replace(/[\s.'’_-]/g,'');
+
+/* ---------- label short names (Visual; aliases per UI 方案) ---------- */
+const SHORT_ALIAS = {
+  'Coding 主管':'主管', 'Visual 程式員':'Visual', 'UI 設計員':'UI',
+  'Youtube主管':'YT主管', 'Mr. 雜務':'雜務', 'Mr. Pickle':'Pickle',
+  'Dr. School':'School', 'Dr.coding':'coding', 'AI 製作員':'AI製',
+  '選題研究員':'選題', '頻道營運':'營運', '短片編劇':'編劇',
+};
+function shortName(name){
+  if(SHORT_ALIAS[name]) return SHORT_ALIAS[name];
+  let s=String(name||'').replace(/^(Dr\.|Mr\.|Ms\.|Mrs\.)\s*/i,'').replace(/^(Dr\.|Mr\.|Ms\.|Mrs\.)/i,'').trim();
+  const seg=(s.split(/\s+|／|\//).filter(Boolean)[0])||s;
+  return Array.from(seg).slice(0,6).join('');
+}
 
 /* ---------- renderer / scene ---------- */
 const canvas = document.getElementById('c');
@@ -302,7 +317,7 @@ function makeBot(name, team, role, color, acc, idx){
   box(0.2,0.14,0.02,gm,-0.13,0.2,0.26,glassG); box(0.2,0.14,0.02,gm,0.13,0.2,0.26,glassG); box(0.08,0.03,0.02,gm,0,0.23,0.26,glassG);
   glassG.visible=false; const hatG=new THREE.Group(); headP.add(hatG);
   root.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.userData.bot=name; } });
-  const label=document.createElement('div'); label.className='lb'; document.getElementById('labels').appendChild(label);
+  const label=document.createElement('div'); label.className='lb lb-compact'; label.dataset.bot=name; document.getElementById('labels').appendChild(label);
   const bub=document.createElement('div'); bub.className='bub'; bub.style.display='none'; document.getElementById('labels').appendChild(bub);
   const b={name,team,role,color,acc,root,hip,headP,armR,armL,legR,legL,hand,label,bub,status:'idle',step:'',pos:new THREE.Vector3(),face:0,
     skin,hair,glasses,mats:{skin:skinM,hair:hairM,shirt:shirtM,pants:pm,shoe:shoeM,face:fm},glassG,hatG,torso,ring,work,pose:{la:0,ra:0,ll:0,rl:0,hx:0,hy:0,hz:0,hipY:0.75,lz:0,rz:0},seat:null,mode:'sit',path:[],t:Math.random()*10,bubT:0,paper:null,onArrive:null,cheer:0};
@@ -511,7 +526,7 @@ function buildTeamOld(){
 function stageAspect(){ const r=canvas.getBoundingClientRect(); return r.height?r.width/r.height:1; }
 function homeZoom(a){ return a>=1?1.2:Math.max(0.9,1.2*a); }
 function teamZoom(a){ return a>=1?2.2:Math.max(1.3,2.2*a); }
-teamEl.onclick=e=>{ const t=e.target.closest('.ac'); if(!t) return; const b=findBot(t.dataset.n); toSel.value=b.name; controls.target.copy(b.root.position); cam.zoom=teamZoom(stageAspect()); cam.updateProjectionMatrix(); };
+teamEl.onclick=e=>{ const t=e.target.closest('.ac'); if(!t) return; const b=findBot(t.dataset.n); if(!b) return; selectBot(b); toSel.value=b.name; controls.target.copy(b.root.position); cam.zoom=teamZoom(stageAspect()); cam.updateProjectionMatrix(); };
 document.getElementById('legend').innerHTML=['working','thinking','waiting_user','error','idle','done'].map(s=>`<span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${STATUS[s].c}"></i> ${STATUS[s].zh}</span>`).join('');
 document.getElementById('send').onclick=async()=>{ const t=document.getElementById('msg').value.trim(); if(!t) return; const to=toSel.value, k=document.getElementById('kind').value;
   const o=k==='task'?{task:{from:'Roy',to,title:t,status:'新'}}:{say:{from:'Roy',to,text:t}}; document.getElementById('msg').value='';
@@ -520,7 +535,11 @@ document.getElementById('send').onclick=async()=>{ const t=document.getElementBy
 document.getElementById('msg').onkeydown=e=>{ if(e.key==='Enter') document.getElementById('send').click(); };
 const ray=new THREE.Raycaster(), mv=new THREE.Vector2();
 canvas.addEventListener('click',e=>{ const r=canvas.getBoundingClientRect(); mv.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); ray.setFromCamera(mv,cam);
-  const h=ray.intersectObjects(botList.map(b=>b.root),true)[0]; if(h){ const b=findBot(h.object.userData.bot); toSel.value=b.name; say(b,`${b.role}｜${STATUS[b.status].zh}${b.step?'：'+b.step:''}`,3500); document.getElementById('msg').focus(); } });
+  const h=ray.intersectObjects(botList.map(b=>b.root),true)[0];
+  if(h){ const b=findBot(h.object.userData.bot); if(!b) return; selectBot(b); toSel.value=b.name; say(b,`${b.role}｜${STATUS[b.status].zh}${b.step?'：'+b.step:''}`,3500); document.getElementById('msg').focus(); }
+  else selectBot(null);
+});
+document.getElementById('labels').addEventListener('click',e=>{ const lb=e.target.closest('.lb'); if(!lb) return; e.stopPropagation(); const b=findBot(lb.dataset.bot); if(!b) return; selectBot(b); toSel.value=b.name; });
 
 // wall screens
 function renderUsage(){ const pct=usage?usage.total_used_pct:26.3; wallScr.material.map=canvasTex(512,300,(g,W,H)=>{ g.fillStyle='#08131f'; g.fillRect(0,0,W,H);
@@ -608,24 +627,43 @@ function botStateFx(b,dt){ const st=b.busy?'talking':b.status, t=b.t, S=STATUS[s
     else if(st==='thinking') sm.emissiveIntensity=0.35+pulse*0.2; } }
 function setBotState(n,state,step){ const b=typeof n==='object'?n:findBot(n); if(!b) return null; b.status=STATUS[state]?state:'idle'; if(step!==undefined) b.step=String(step||''); return b; }
 const stepLine=s=>{ s=String(s||'').replace(/\s+/g,' ').trim(); return s.length>34?s.slice(0,33)+'…':s; };
-/* ---------- label declutter (Visual): priority = selected > busy/error/working > near camera ----------
-   portrait: only top LABEL_FULL_PORTRAIT bots get full labels, rest short name; overlapping lower-priority labels hide. */
+/* ---------- label compact/expand (Visual DOM + 程式員 selectBot API) ----------
+   DOM: .lb.lb-compact | .lb.lb-open → .lb-ic[data-st] + .lb-short；open 另加 .lb-detail / .lb-step
+   API: selectBot(b|null) / getSelected() / onSelection(fn) / shortName；b._selected；selectedName */
+const labelSel = createBotLabelSelection({ bots: () => botList, findBot });
+function selectBot(b){ return labelSel.selectBot(b); }
+function getSelected(){ return labelSel.getSelected(); }
+function onSelection(fn){ return labelSel.onSelection(fn); }
+function labelStatusKey(b){ return b.busy?'talking':b.mode==='walk'?'walking':b.status; }
+function renderBotLabel(b){
+  const st=labelStatusKey(b), S=STATUS[st]||STATUS.idle, open=!!b._selected;
+  const cls=open?'lb lb-open':'lb lb-compact';
+  let html=`<span class="lb-ic" data-st="${st}" title="${esc(S.zh)} ${S.ic||''}"></span><span class="lb-short">${esc(shortName(b.name))}</span>`;
+  if(open){ html+=`<div class="lb-detail">${esc(b.name)} · ${esc(b.role)}</div>`;
+    if(b.step&&st!=='idle') html+=`<div class="lb-step">${esc(stepLine(b.step))}</div>`; }
+  if(b.label.className!==cls) b.label.className=cls;
+  if(b.label.dataset.bot!==b.name) b.label.dataset.bot=b.name;
+  if(b.label._h!==html){ b.label.innerHTML=html; b.label._h=html; }
+}
+/* ---------- label declutter: compact 預設；open 永不藏；窄屏／直屏先撞藏低優先 ---------- */
 const LABEL_PRI={error:100,working:90,waiting_user:95,talking:85,thinking:60,done:40,idle:0,walking:20};
-const LABEL_FULL_PORTRAIT=4; let _dcF=0;
-function declutterLabels(){ if((_dcF++)%4) return; const portrait=innerHeight>innerWidth, sel=document.getElementById('to')?.value;
-  if(!(portrait||innerWidth<=800)){ botList.forEach(b=>{ b._short=false; b.label.style.visibility=''; b.bub.style.visibility=''; }); return; } // merged: declutter only on portrait/narrow screens
-  const cp=cam.position, items=botList.map(b=>{ const st=b.busy?'talking':b.mode==='walk'?'walking':b.status;
-    return {b,pri:(b.name===sel?1000:0)+(LABEL_PRI[st]||0)-b.root.position.distanceTo(cp)*0.5}; }).sort((x,y)=>y.pri-x.pri);
-  const placed=[]; const hit=r=>placed.some(q=>r.left<q.right-2&&r.right>q.left+2&&r.top<q.bottom-2&&r.bottom>q.top+2);
-  items.forEach(({b},i)=>{ b._short=portrait&&i>=LABEL_FULL_PORTRAIT;
-    if(b.bubT>0){ b.bub.style.visibility=''; const r=b.bub.getBoundingClientRect(); if(hit(r)) b.bub.style.visibility='hidden'; else placed.push(r); }
-    b.label.style.visibility=''; const r=b.label.getBoundingClientRect(); if(hit(r)) b.label.style.visibility='hidden'; else placed.push(r); }); }
+let _dcF=0;
+function declutterLabels(){ if((_dcF++)%4) return; const portrait=innerHeight>innerWidth, narrow=portrait||innerWidth<=800;
+  if(!narrow){ botList.forEach(b=>{ b.label.style.visibility=''; b.bub.style.visibility=''; }); return; }
+  const cp=cam.position, items=botList.map(b=>{ const st=labelStatusKey(b);
+    return {b,pri:(b._selected?2000:0)+(LABEL_PRI[st]||0)-b.root.position.distanceTo(cp)*0.5}; }).sort((x,y)=>y.pri-x.pri);
+  const placed=[]; const hit=r=>placed.some(q=>r.left<q.right-4&&r.right>q.left+4&&r.top<q.bottom-2&&r.bottom>q.top+2);
+  items.forEach(({b})=>{
+    if(b.bubT>0){ b.bub.style.visibility=''; const r=b.bub.getBoundingClientRect(); if(hit(r)&&!b._selected) b.bub.style.visibility='hidden'; else placed.push(r); }
+    b.label.style.visibility=''; const r=b.label.getBoundingClientRect();
+    if(b._selected){ placed.push(r); return; }
+    if(hit(r)) b.label.style.visibility='hidden'; else placed.push(r);
+  }); }
 const W=new THREE.Vector3();
 function placeDom(el,obj,yoff){ W.copy(obj.position); W.y+=yoff; W.project(cam); const r=canvas.getBoundingClientRect();
   el.style.left=((W.x+1)/2*r.width)+'px'; el.style.top=((1-W.y)/2*r.height)+'px'; }
 function loop(){ const dt=Math.min(clk.getDelta(),0.05); controls.update(); collisionTick(); if(pickleFx) pickleFx.tick(dt);
-  botList.forEach(b=>{ animBot(b,dt); const S=STATUS[b.busy?'talking':b.mode==='walk'?'walking':b.status];
-    const tb=(b.status==='working'&&!b.busy&&b.mode==='sit')?tool(b.step):(b.mode==='walk'||b.busy?'':S.ic); const stp=b.step&&b.status!=='idle'?`<small class="st" style="display:block;max-width:${b._short?130:170}px;white-space:normal;line-height:1.2;opacity:.85">${esc(stepLine(b.step))}</small>`:''; const html=b._short?`<span class="np"><i style="background:${S.c}"></i>${esc(b.name)}${stp}</span>`:`${tb?`<span class="tool">${tb}</span>`:''}<span class="np"><i style="background:${S.c}"></i>${esc(b.name)}<small>${esc(b.role)}</small>${stp}</span>`; if(b.label._h!==html){ b.label.innerHTML=html; b.label._h=html; }
+  botList.forEach(b=>{ animBot(b,dt); renderBotLabel(b);
     placeDom(b.label,b.root,(b.mode==='sit'?1.95:2.2)+(b.status==='waiting_user'&&!b.busy?Math.abs(Math.sin(b.t*4))*0.25:0));
     if(b.bubT>0) placeDom(b.bub,b.root,2.9); });
   declutterLabels();
@@ -724,7 +762,7 @@ const pkQ=qp.get('pickle'); if(pkQ==='singles'||pkQ==='doubles') setTimeout(()=>
   }, 500);
 }, 1200);
 
-window.__office={bots:botList,setBotState,applyLooks,handle,setTime,startFlow,findBot,collision:COL,collisionStats:colStats,applyBotState,getBotState,onStateChange,net,pickleball,COURT,playerSlots,WORK_PRIORITY,pickleFx,debugPickleShot:(s,o)=>pickleFx&&pickleFx.debugPlayShot(s,o)};
+window.__office={bots:botList,setBotState,applyLooks,handle,setTime,startFlow,findBot,collision:COL,collisionStats:colStats,applyBotState,getBotState,onStateChange,net,pickleball,COURT,playerSlots,WORK_PRIORITY,pickleFx,debugPickleShot:(s,o)=>pickleFx&&pickleFx.debugPlayShot(s,o),selectBot,getSelected,onSelection,shortName,labelSel,renderBotLabel};
 if(qp.get('debug')==='collision') drawCollisionDebug();
 
 

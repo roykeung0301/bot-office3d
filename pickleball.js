@@ -221,7 +221,7 @@ export function createPickleController(deps) {
       servingSide: match.servingSide,
       plannedRallies: match.plannedRallies ?? null,
       rallyShot: match.rallyShot ?? 0,
-      lastShot: match.lastShot ? { ...match.lastShot } : null,
+      lastShot: match.lastShot || null,
       lastTarget: match.lastTarget ? { ...match.lastTarget } : null,
     };
   }

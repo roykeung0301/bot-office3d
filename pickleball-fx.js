@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { COURT } from './pickleball.js?v=20261102s';
+import { COURT } from './pickleball.js?v=20261102t';
 
 /**
  * Visual FX for pickleball — ball arcs, serve, shot types, chase runs.
  * Listens: start -> ready -> serve -> rally -> point -> end | leave
- * Multi-hit points: each rally event (n=1..N) plays one exchange; ball stays until point.
+ * Multi-hit: rally n=1..plannedRallies (serve excluded); point FX only on `point` event.
  */
 export function createPickleFX({ scene, THREE: T = THREE, findBot, pickleball, walkTo, say }) {
   const THREE = T;
@@ -341,18 +341,18 @@ export function createPickleFX({ scene, THREE: T = THREE, findBot, pickleball, w
       lastRallyEv = ev;
       playServeEvent(ev);
     } else if (type === 'rally') {
-      // { n, shot, from:{name,side,slot}, to:{...}, target:{x,z}, fromSide, toSide }
-      // Each rally event = one hit. Multi-hit points emit n=1,2,3... — never clear ball here.
+      // { n, plannedRallies, shot, from, to, target, fromSide, toSide }
+      // One visual flight per event. Serve is NOT counted in plannedRallies.
+      // Do NOT spawn point FX here — wait until n reaches plannedRallies then `point`.
       lastRallyEv = ev;
       serveAnim = null;
-      if (flight) { flight.hold = false; } // interrupt prior hold for next exchange
+      if (flight) { flight.hold = false; }
       launchFromEvent(ev);
       if (flight) { flight.maxReturns = 0; flight.returns = 0; flight.hold = false; }
-      paintScore(
-        (pickleball.getMatch()?.score?.A) || 0,
-        (pickleball.getMatch()?.score?.B) || 0,
-        `${(ev.shot || 'HIT').toUpperCase()} #${ev.n || '?'}`
-      );
+      const m = pickleball.getMatch();
+      const planned = ev.plannedRallies || m?.plannedRallies || '?';
+      const label = `${(ev.shot || 'HIT').toUpperCase()} ${ev.n || '?'}/${planned}`;
+      paintScore(m?.score?.A || 0, m?.score?.B || 0, label);
     } else if (type === 'point') {
       // { side, score, random:true }
       flight = null; serveAnim = null;
