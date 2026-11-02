@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { COURT } from './pickleball.js?v=20261102r';
+import { COURT } from './pickleball.js?v=20261102s';
 
 /**
  * Visual FX for pickleball — ball arcs, serve, shot types, chase runs.
  * Listens: start -> ready -> serve -> rally -> point -> end | leave
- * Programmer emits full serve + rally payloads; swing/ball use bot.pos (not frozen slots).
+ * Multi-hit points: each rally event (n=1..N) plays one exchange; ball stays until point.
  */
 export function createPickleFX({ scene, THREE: T = THREE, findBot, pickleball, walkTo, say }) {
   const THREE = T;
@@ -342,11 +342,17 @@ export function createPickleFX({ scene, THREE: T = THREE, findBot, pickleball, w
       playServeEvent(ev);
     } else if (type === 'rally') {
       // { n, shot, from:{name,side,slot}, to:{...}, target:{x,z}, fromSide, toSide }
+      // Each rally event = one hit. Multi-hit points emit n=1,2,3... — never clear ball here.
       lastRallyEv = ev;
       serveAnim = null;
+      if (flight) { flight.hold = false; } // interrupt prior hold for next exchange
       launchFromEvent(ev);
-      // One visual flight per programmer rally
-      if (flight) { flight.maxReturns = 0; flight.returns = 0; }
+      if (flight) { flight.maxReturns = 0; flight.returns = 0; flight.hold = false; }
+      paintScore(
+        (pickleball.getMatch()?.score?.A) || 0,
+        (pickleball.getMatch()?.score?.B) || 0,
+        `${(ev.shot || 'HIT').toUpperCase()} #${ev.n || '?'}`
+      );
     } else if (type === 'point') {
       // { side, score, random:true }
       flight = null; serveAnim = null;

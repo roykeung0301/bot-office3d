@@ -1,7 +1,7 @@
 // pickleball.js — real-size court geometry + idle match state machine (no three.js).
 // Scale: 1 world unit = 1 metre (matches desk / ping-pong footprints in app.js).
 // Visual owns ball / paddle / swing animation; this module owns who plays, slots, score, triggers.
-// Rally logic: serve → shot (drive/drop/dink) → chase landing with walkTo → random point.
+// Rally logic: serve → multi-shot rally (3–8 exchanges, drive/drop/dink) → chase each landing → random point.
 
 export const FT = 0.3048;
 export const COURT_LENGTH = 44 * FT;   // 13.4112 m
@@ -30,6 +30,10 @@ export const WORK_PRIORITY = new Set(['working', 'waiting_user', 'thinking', 'er
 
 /** Hit kinds Visual animates. `drip` is an alias of `drop`. */
 export const SHOTS = ['drive', 'drop', 'dink'];
+
+/** Exchange shots per point AFTER serve (serve itself is not counted). */
+export const MIN_RALLY_SHOTS = 3;
+export const MAX_RALLY_SHOTS = 8;
 
 export function normalizeShot(shot) {
   if (shot === 'drip') return 'drop';
@@ -215,6 +219,8 @@ export function createPickleController(deps) {
       startedAt: match.startedAt,
       rally: match.rally,
       servingSide: match.servingSide,
+      plannedRallies: match.plannedRallies ?? null,
+      rallyShot: match.rallyShot ?? 0,
       lastShot: match.lastShot ? { ...match.lastShot } : null,
       lastTarget: match.lastTarget ? { ...match.lastTarget } : null,
     };
@@ -261,6 +267,8 @@ export function createPickleController(deps) {
       servingSide: random() < 0.5 ? 'A' : 'B',
       lastShot: null,
       lastTarget: null,
+      plannedRallies: null,
+      rallyShot: 0,
     };
     for (const p of match.players) {
       const b = p.bot;
@@ -398,18 +406,46 @@ export function createPickleController(deps) {
     return SHOTS[i];
   }
 
+  /** Random 3..8 exchange shots for this point (serve is NOT included). */
+  function planRallyLength() {
+    const span = MAX_RALLY_SHOTS - MIN_RALLY_SHOTS + 1;
+    return MIN_RALLY_SHOTS + Math.floor(random() * span) % span;
+  }
+
+  /**
+   * Begin multi-shot rally after serve.
+   * Serve event already sent the ball to recvSide — first exchange is the return
+   * (from recvSide), then sides alternate until plannedRallies shots are done.
+   * Shots are emitted one at a time with chase + delay between them.
+   */
   function startRally(ctx = {}) {
     if (!match || match.phase === 'end') return;
     match.phase = 'rally';
-    match.rally++;
-    const fromSide = ctx.serverSide || match.servingSide || 'A';
+    match.rally++; // point index (1-based); also safety cap for match length
+    match.plannedRallies = planRallyLength();
+    match.rallyShot = 0;
+    const serverSide = ctx.serverSide || match.servingSide || 'A';
+    const recvSide = ctx.recvSide || (serverSide === 'A' ? 'B' : 'A');
+    // First rally shot = return of serve (receiver hits)
+    fireRallyShot({
+      fromSide: recvSide,
+      preferredHitter: ctx.receiver,
+      preferredReceiver: ctx.server,
+    });
+  }
+
+  function fireRallyShot({ fromSide, preferredHitter = null, preferredReceiver = null }) {
+    if (!match || match.phase !== 'rally') return;
     const toSide = fromSide === 'A' ? 'B' : 'A';
+    match.rallyShot++;
+    const shotN = match.rallyShot;
+    const planned = match.plannedRallies;
     const shot = chooseShot();
-    const hitter = ctx.server && ctx.server.slot.side === fromSide
-      ? ctx.server
+    const hitter = preferredHitter && preferredHitter.slot.side === fromSide
+      ? preferredHitter
       : pickPlayer(match.players, fromSide, random);
-    const receiver = ctx.receiver && ctx.receiver.slot.side === toSide
-      ? ctx.receiver
+    const receiver = preferredReceiver && preferredReceiver.slot.side === toSide
+      ? preferredReceiver
       : pickPlayer(match.players, toSide, random);
     const target = landingTarget(toSide, shot, COURT, random);
     match.lastShot = shot;
@@ -417,7 +453,9 @@ export function createPickleController(deps) {
     const from = playerRef(hitter);
     const to = playerRef(receiver);
     emit('rally', {
-      n: match.rally,
+      n: shotN,                 // shot index within this point (1..plannedRallies)
+      point: match.rally,       // which point of the match
+      plannedRallies: planned,  // total exchange shots this point (serve excluded)
       shot,
       from,
       to,
@@ -427,26 +465,43 @@ export function createPickleController(deps) {
     });
     chaseLanding(fromSide, toSide, target);
 
-    // Flight + chase window; duration scales a bit by shot (drive faster exchange feel)
+    // Flight + chase window; next shot (or point) only after this delay — never batch-emit.
     const base = shot === 'drive' ? 1400 : shot === 'drop' ? 1800 : 2000;
     const ms = base + Math.floor(random() * 500);
-    match._rallyTimer = setTimeout(() => finishRallyPoint(), wait(ms));
+    match._rallyTimer = setTimeout(() => {
+      if (!match || match.phase !== 'rally') return;
+      if (shotN >= planned) {
+        finishRallyPoint();
+      } else {
+        // next exchange: previous receiver becomes hitter
+        fireRallyShot({ fromSide: toSide });
+      }
+    }, wait(ms));
   }
 
   function finishRallyPoint() {
     if (!match || match.phase === 'end') return;
     // Random point — NOT alternating. Still win-by-1 to target.
+    // Never called on serve / before plannedRallies exchange shots complete.
     const side = random() < 0.5 ? 'A' : 'B';
     match.score[side]++;
     // winner of the point serves next (casual office rule)
     match.servingSide = side;
-    emit('point', { side, score: { ...match.score }, random: true });
+    emit('point', {
+      side,
+      score: { ...match.score },
+      random: true,
+      rallies: match.rallyShot,
+      plannedRallies: match.plannedRallies,
+    });
     addFeed('系統', `🏓 ${side} 得分 ${match.score.A}–${match.score.B}`, 'idle');
     const win = match.score[side] >= match.target && Math.abs(match.score.A - match.score.B) >= 1;
     if (win || match.rally >= 16) {
       endMatch('finished');
     } else {
       match.phase = 'ready';
+      match.plannedRallies = null;
+      match.rallyShot = 0;
       match._nextTimer = setTimeout(scheduleServe, wait(700 + Math.floor(random() * 500)));
     }
   }
@@ -537,6 +592,8 @@ export function createPickleController(deps) {
     courtObstacles,
     courtLines,
     SHOTS,
+    MIN_RALLY_SHOTS,
+    MAX_RALLY_SHOTS,
     normalizeShot,
     landingTarget,
     dispose,

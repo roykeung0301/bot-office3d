@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { OrbitControls } from './vendor/OrbitControls.js?v=20261102r';
-import { createCollision } from './collision.js?v=20261102r';
-import { createPickleController, COURT, courtObstacles, courtLines, playerSlots, WORK_PRIORITY } from './pickleball.js?v=20261102r';
-import { createPickleFX } from './pickleball-fx.js?v=20261102r';
+import { OrbitControls } from './vendor/OrbitControls.js?v=20261102s';
+import { createCollision } from './collision.js?v=20261102s';
+import { createPickleController, COURT, courtObstacles, courtLines, playerSlots, WORK_PRIORITY } from './pickleball.js?v=20261102s';
+import { createPickleFX } from './pickleball-fx.js?v=20261102s';
 
 /* ---------- config ---------- */
 const STATUS = {
