@@ -350,9 +350,15 @@ const LIVE=/^[\w-]{1,64}$/.test(topic);
 let sim=!LIVE;
 document.getElementById('mode').textContent=LIVE?'● 實時 Live':'模擬 Demo';
 document.getElementById('feedsrc').textContent=LIVE?'ntfy':'Simulated';
-if(LIVE){ const es=new EventSource(`https://ntfy.sh/${encodeURIComponent(topic)}/sse?since=12h`);
-  es.onmessage=e=>{ try{ const m=JSON.parse(e.data); if(m.event!=='message') return; const o=JSON.parse(m.message); const ts=m.time*1000; handle(o,{ts,anim:Date.now()-ts<30000}); }catch(err){} };
-  es.onerror=()=>{ document.getElementById('mode').textContent='⚠ 重新連線中'; }; es.onopen=()=>{ document.getElementById('mode').textContent='● 實時 Live'; };
+if(LIVE){ let lastId='12h', seen=new Set(), first=true;
+  const setMode=t=>{ document.getElementById('mode').textContent=t; };
+  async function pollOnce(){ try{ const r=await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}/json?poll=1&since=${lastId}`,{cache:'no-store'}); if(!r.ok) throw new Error(r.status);
+      const txt=await r.text(); setMode('● 實時 Live'); const lines=txt.split('\n').filter(Boolean);
+      for(const ln of lines){ let m; try{ m=JSON.parse(ln); }catch(e){ continue; } if(m.id) lastId=m.id; if(m.event!=='message'||seen.has(m.id)) continue; seen.add(m.id);
+        try{ const o=JSON.parse(m.message); const ts=m.time*1000; handle(o,{ts,anim:!first&&Date.now()-ts<60000}); }catch(err){} }
+      first=false;
+    }catch(e){ setMode('⚠ 重新連線中'); } }
+  pollOnce(); setInterval(pollOnce,3000);
   document.getElementById('simbtn').style.display='none'; }
 async function post(o){ if(LIVE){ await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}`,{method:'POST',body:JSON.stringify(o)}); } else handle(o,{ts:Date.now(),anim:true}); }
 
