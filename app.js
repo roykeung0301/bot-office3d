@@ -353,11 +353,11 @@ document.getElementById('feedsrc').textContent=LIVE?'ntfy':'Simulated';
 if(LIVE){ let lastId='12h', seen=new Set(), first=true;
   const setMode=t=>{ document.getElementById('mode').textContent=t; };
   async function pollOnce(){ try{ const r=await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}/json?poll=1&since=${lastId}`,{cache:'no-store'}); if(!r.ok) throw new Error(r.status);
-      const txt=await r.text(); setMode('● 實時 Live'); const lines=txt.split('\n').filter(Boolean);
+      const txt=await r.text(); const lines=txt.split('\n').filter(Boolean);
       for(const ln of lines){ let m; try{ m=JSON.parse(ln); }catch(e){ continue; } if(m.id) lastId=m.id; if(m.event!=='message'||seen.has(m.id)) continue; seen.add(m.id);
         try{ const o=JSON.parse(m.message); const ts=m.time*1000; handle(o,{ts,anim:!first&&Date.now()-ts<60000}); }catch(err){} }
-      first=false;
-    }catch(e){ setMode('⚠ 重新連線中'); } }
+      first=false; setMode('● Live v3 · '+seen.size+' 條');
+    }catch(e){ setMode('⚠ 連線失敗 '+(e&&e.message||e)); } }
   pollOnce(); setInterval(pollOnce,3000);
   document.getElementById('simbtn').style.display='none'; }
 async function post(o){ if(LIVE){ await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}`,{method:'POST',body:JSON.stringify(o)}); } else handle(o,{ts:Date.now(),anim:true}); }
