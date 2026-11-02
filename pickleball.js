@@ -1,6 +1,7 @@
 // pickleball.js — real-size court geometry + idle match state machine (no three.js).
 // Scale: 1 world unit = 1 metre (matches desk / ping-pong footprints in app.js).
 // Visual owns ball / paddle / swing animation; this module owns who plays, slots, score, triggers.
+// Rally logic: serve → shot (drive/drop/dink) → chase landing with walkTo → random point.
 
 export const FT = 0.3048;
 export const COURT_LENGTH = 44 * FT;   // 13.4112 m
@@ -26,6 +27,15 @@ export const COURT = {
 export const ELIGIBLE = new Set(['idle', 'done']);
 /** Live work beats pickle — pull these bots out of a match. */
 export const WORK_PRIORITY = new Set(['working', 'waiting_user', 'thinking', 'error']);
+
+/** Hit kinds Visual animates. `drip` is an alias of `drop`. */
+export const SHOTS = ['drive', 'drop', 'dink'];
+
+export function normalizeShot(shot) {
+  if (shot === 'drip') return 'drop';
+  if (SHOTS.includes(shot)) return shot;
+  return null;
+}
 
 export function courtBounds(c = COURT) {
   const hx = c.length / 2, hz = c.width / 2;
@@ -60,7 +70,6 @@ export function courtLines(c = COURT) {
   // kitchen / NVZ lines
   add('pickle-line-nvz-a', c.cx - c.nvz, c.cz, t, c.width);
   add('pickle-line-nvz-b', c.cx + c.nvz, c.cz, t, c.width);
-  // doubles sideline insets (singles service width markers optional — skip for clarity)
   return lines;
 }
 
@@ -81,6 +90,41 @@ export function playerSlots(mode = 'singles', c = COURT) {
     { id: 'A', side: 'A', x: midA, z: c.cz, face: Math.PI / 2 },
     { id: 'B', side: 'B', x: midB, z: c.cz, face: -Math.PI / 2 },
   ];
+}
+
+/**
+ * Ball landing xz on `toSide`. Depth varies by shot (drive deep, drop mid, dink near kitchen).
+ * Lateral z is randomised so bots must chase left/right — not frozen on slots.
+ */
+export function landingTarget(toSide, shot, c = COURT, rng = Math.random) {
+  const kind = normalizeShot(shot) || 'drive';
+  const b = courtBounds(c);
+  const xSign = toSide === 'A' ? -1 : 1;
+  let depthFrac;
+  if (kind === 'drive') depthFrac = 0.55 + rng() * 0.32;
+  else if (kind === 'drop') depthFrac = 0.22 + rng() * 0.28;
+  else depthFrac = 0.08 + rng() * 0.16; // dink: near kitchen / NVZ
+  const depth = c.nvz + (b.hx - c.nvz) * depthFrac;
+  let x = c.cx + xSign * depth;
+  // stay on correct half, clear of net thickness
+  const minClear = NET_THICK / 2 + 0.35;
+  if (toSide === 'A') x = Math.min(c.cx - minClear, Math.max(b.minX + 0.45, x));
+  else x = Math.max(c.cx + minClear, Math.min(b.maxX - 0.45, x));
+  const z = c.cz + (rng() - 0.5) * (b.hz * 1.55);
+  const zClamped = Math.max(b.minZ + 0.45, Math.min(b.maxZ - 0.45, z));
+  return { x, z, shot: kind, side: toSide };
+}
+
+/** Serve stance: behind mid-depth on server side; receiver mirrors opposite. */
+export function serveStance(side, c = COURT, rng = Math.random) {
+  const b = courtBounds(c);
+  const xSign = side === 'A' ? -1 : 1;
+  const x = c.cx + xSign * (b.hx * 0.72);
+  const z = c.cz + (rng() - 0.5) * (b.hz * 0.9);
+  return {
+    x: Math.max(b.minX + 0.4, Math.min(b.maxX - 0.4, x)),
+    z: Math.max(b.minZ + 0.4, Math.min(b.maxZ - 0.4, z)),
+  };
 }
 
 export function statusOf(bot, getBotState) {
@@ -112,6 +156,17 @@ export function listEligible(botList, getBotState, { prefer = ['Mr. Pickle'], is
   return ok;
 }
 
+function pickPlayer(players, side, rng) {
+  const pool = players.filter(p => p.slot.side === side);
+  if (!pool.length) return null;
+  return pool[Math.floor(rng() * pool.length) % pool.length];
+}
+
+function playerRef(p) {
+  if (!p) return null;
+  return { name: p.bot.name, side: p.slot.side, slot: p.slot.id };
+}
+
 export function createPickleController(deps) {
   const {
     botList,
@@ -122,7 +177,10 @@ export function createPickleController(deps) {
     onStateChange = () => () => {},
     findBot = () => null,
     now = () => Date.now(),
+    random = Math.random,
+    pace = 1, // test hook: scale setTimeout delays (e.g. 0.01)
   } = deps;
+  const wait = (ms) => Math.max(1, Math.round(ms * pace));
 
   let match = null;
   let autoIdle = false;
@@ -155,6 +213,10 @@ export function createPickleController(deps) {
         name: p.bot.name, slot: p.slot.id, side: p.slot.side,
       })),
       startedAt: match.startedAt,
+      rally: match.rally,
+      servingSide: match.servingSide,
+      lastShot: match.lastShot ? { ...match.lastShot } : null,
+      lastTarget: match.lastTarget ? { ...match.lastTarget } : null,
     };
   }
 
@@ -196,6 +258,9 @@ export function createPickleController(deps) {
       rally: 0,
       target: mode === 'doubles' ? 11 : 7,
       arrived: 0,
+      servingSide: random() < 0.5 ? 'A' : 'B',
+      lastShot: null,
+      lastTarget: null,
     };
     for (const p of match.players) {
       const b = p.bot;
@@ -213,7 +278,7 @@ export function createPickleController(deps) {
         if (match && match.arrived >= match.players.length && match.phase === 'walk') {
           match.phase = 'ready';
           emit('ready');
-          scheduleRally();
+          scheduleServe();
         }
       });
     }
@@ -223,42 +288,175 @@ export function createPickleController(deps) {
     return { ok: true, match: getMatch() };
   }
 
-  function scheduleRally() {
+  function faceNet(side) {
+    return side === 'A' ? Math.PI / 2 : -Math.PI / 2;
+  }
+
+  /** Move bots into serve / receive stances (left-right jitter, not frozen slots). */
+  function lineupForServe(serverSide) {
+    const recvSide = serverSide === 'A' ? 'B' : 'A';
+    const b = courtBounds();
+    for (const p of match.players) {
+      const isServerSide = p.slot.side === serverSide;
+      const stance = serveStance(p.slot.side, COURT, random);
+      // keep doubles partners split on z using their slot bias + small jitter
+      const zBias = (p.slot.z - COURT.cz) * 0.55;
+      const x = stance.x;
+      const z = Math.max(
+        b.minZ + 0.4,
+        Math.min(b.maxZ - 0.4, COURT.cz + zBias + (random() - 0.5) * 0.5),
+      );
+      p.bot.walkSpeed = 4.2;
+      walkTo(p.bot, x, z, () => {
+        p.bot.walkSpeed = null;
+        p.bot.mode = 'stand';
+        p.bot.face = faceNet(p.slot.side);
+      });
+      p._role = isServerSide ? 'serve' : 'receive';
+    }
+    return { serverSide, recvSide };
+  }
+
+  /** Receiving side chases landing; partners cover; hitters recover toward mid-depth. */
+  function chaseLanding(fromSide, toSide, target) {
+    const b = courtBounds();
+    const receivers = match.players.filter(p => p.slot.side === toSide);
+    const hitters = match.players.filter(p => p.slot.side === fromSide);
+    receivers.sort((a, c) => {
+      const ax = a.bot.pos?.x ?? a.slot.x, az = a.bot.pos?.z ?? a.slot.z;
+      const cx = c.bot.pos?.x ?? c.slot.x, cz = c.bot.pos?.z ?? c.slot.z;
+      const da = (ax - target.x) ** 2 + (az - target.z) ** 2;
+      const dc = (cx - target.x) ** 2 + (cz - target.z) ** 2;
+      return da - dc;
+    });
+    receivers.forEach((p, i) => {
+      let x = target.x, z = target.z;
+      if (i === 0) {
+        // primary chaser: near landing, slightly short so they don't stand on ball
+        const pull = toSide === 'A' ? 0.35 : -0.35;
+        x = target.x + pull;
+        z = target.z + (random() - 0.5) * 0.25;
+      } else {
+        // partner covers opposite lateral half
+        const coverZ = target.z >= COURT.cz ? b.minZ + b.hz * 0.45 : b.maxZ - b.hz * 0.45;
+        x = COURT.cx + (toSide === 'A' ? -1 : 1) * (b.hx * 0.4);
+        z = coverZ;
+      }
+      x = Math.max(b.minX + 0.4, Math.min(b.maxX - 0.4, x));
+      // keep on own half
+      if (toSide === 'A') x = Math.min(COURT.cx - 0.4, x);
+      else x = Math.max(COURT.cx + 0.4, x);
+      z = Math.max(b.minZ + 0.4, Math.min(b.maxZ - 0.4, z));
+      p.bot.walkSpeed = 5.8;
+      walkTo(p.bot, x, z, () => {
+        p.bot.walkSpeed = null;
+        p.bot.mode = 'stand';
+        p.bot.face = faceNet(p.slot.side);
+      });
+    });
+    for (const p of hitters) {
+      const recover = serveStance(fromSide, COURT, random);
+      const zBias = (p.slot.z - COURT.cz) * 0.4;
+      const x = COURT.cx + (fromSide === 'A' ? -1 : 1) * (b.hx * 0.42);
+      const z = Math.max(b.minZ + 0.4, Math.min(b.maxZ - 0.4, recover.z * 0.3 + COURT.cz * 0.7 + zBias));
+      p.bot.walkSpeed = 4.5;
+      walkTo(p.bot, x, z, () => {
+        p.bot.walkSpeed = null;
+        p.bot.mode = 'stand';
+        p.bot.face = faceNet(p.slot.side);
+      });
+    }
+  }
+
+  function scheduleServe() {
+    if (!match || match.phase === 'end') return;
+    match.phase = 'serve';
+    const serverSide = match.servingSide || 'A';
+    const server = pickPlayer(match.players, serverSide, random);
+    const recvSide = serverSide === 'A' ? 'B' : 'A';
+    const receiver = pickPlayer(match.players, recvSide, random);
+    const stance = lineupForServe(serverSide);
+    const serveTarget = landingTarget(recvSide, 'drop', COURT, random);
+    match.lastTarget = { ...serveTarget };
+    emit('serve', {
+      side: serverSide,
+      server: playerRef(server),
+      receiver: playerRef(receiver),
+      target: { x: serveTarget.x, z: serveTarget.z },
+      shot: 'drop', // soft open — Visual may treat serve separately
+    });
+    // short pause for serve animation / walk into stance, then rally exchange
+    const ms = 900 + Math.floor(random() * 500);
+    match._serveTimer = setTimeout(() => {
+      if (!match || match.phase !== 'serve') return;
+      startRally({ server, receiver, serverSide, recvSide });
+    }, wait(ms));
+  }
+
+  function chooseShot() {
+    const i = Math.floor(random() * SHOTS.length) % SHOTS.length;
+    return SHOTS[i];
+  }
+
+  function startRally(ctx = {}) {
     if (!match || match.phase === 'end') return;
     match.phase = 'rally';
     match.rally++;
-    emit('rally', { n: match.rally });
-    // Lightweight placeholder rally — Visual replaces with ball/paddle via onPickleEvent.
-    const ms = 1800 + (match.rally % 3) * 400;
-    match._rallyTimer = setTimeout(() => {
-      if (!match) return;
-      const side = match.rally % 2 === 0 ? 'A' : 'B';
-      match.score[side]++;
-      emit('point', { side, score: { ...match.score } });
-      addFeed('系統', `🏓 ${side} 得分 ${match.score.A}–${match.score.B}`, 'idle');
-      const win = match.score[side] >= match.target && Math.abs(match.score.A - match.score.B) >= 1;
-      // to 7/11, win by 1 for casual office play
-      if (win || match.rally >= 16) {
-        endMatch('finished');
-      } else {
-        match.phase = 'ready';
-        // nudge players slightly toward a ready stance (still on their side)
-        for (const p of match.players) {
-          const jitter = (Math.random() - 0.5) * 0.35;
-          walkTo(p.bot, p.slot.x + jitter * 0.2, p.slot.z + jitter, () => {
-            p.bot.mode = 'stand'; p.bot.face = p.slot.face;
-          });
-        }
-        match._nextTimer = setTimeout(scheduleRally, 1200);
-      }
-    }, ms);
+    const fromSide = ctx.serverSide || match.servingSide || 'A';
+    const toSide = fromSide === 'A' ? 'B' : 'A';
+    const shot = chooseShot();
+    const hitter = ctx.server && ctx.server.slot.side === fromSide
+      ? ctx.server
+      : pickPlayer(match.players, fromSide, random);
+    const receiver = ctx.receiver && ctx.receiver.slot.side === toSide
+      ? ctx.receiver
+      : pickPlayer(match.players, toSide, random);
+    const target = landingTarget(toSide, shot, COURT, random);
+    match.lastShot = shot;
+    match.lastTarget = { x: target.x, z: target.z };
+    const from = playerRef(hitter);
+    const to = playerRef(receiver);
+    emit('rally', {
+      n: match.rally,
+      shot,
+      from,
+      to,
+      target: { x: target.x, z: target.z },
+      fromSide,
+      toSide,
+    });
+    chaseLanding(fromSide, toSide, target);
+
+    // Flight + chase window; duration scales a bit by shot (drive faster exchange feel)
+    const base = shot === 'drive' ? 1400 : shot === 'drop' ? 1800 : 2000;
+    const ms = base + Math.floor(random() * 500);
+    match._rallyTimer = setTimeout(() => finishRallyPoint(), wait(ms));
+  }
+
+  function finishRallyPoint() {
+    if (!match || match.phase === 'end') return;
+    // Random point — NOT alternating. Still win-by-1 to target.
+    const side = random() < 0.5 ? 'A' : 'B';
+    match.score[side]++;
+    // winner of the point serves next (casual office rule)
+    match.servingSide = side;
+    emit('point', { side, score: { ...match.score }, random: true });
+    addFeed('系統', `🏓 ${side} 得分 ${match.score.A}–${match.score.B}`, 'idle');
+    const win = match.score[side] >= match.target && Math.abs(match.score.A - match.score.B) >= 1;
+    if (win || match.rally >= 16) {
+      endMatch('finished');
+    } else {
+      match.phase = 'ready';
+      match._nextTimer = setTimeout(scheduleServe, wait(700 + Math.floor(random() * 500)));
+    }
   }
 
   function clearTimers() {
     if (!match) return;
     if (match._rallyTimer) clearTimeout(match._rallyTimer);
     if (match._nextTimer) clearTimeout(match._nextTimer);
-    match._rallyTimer = match._nextTimer = null;
+    if (match._serveTimer) clearTimeout(match._serveTimer);
+    match._rallyTimer = match._nextTimer = match._serveTimer = null;
   }
 
   function releaseBot(bot, reason = 'stop') {
@@ -290,7 +488,6 @@ export function createPickleController(deps) {
       b.busy = false;
       if (b._picklePrevStep !== undefined) { b.step = b._picklePrevStep; delete b._picklePrevStep; }
       say(b, reason === 'finished' ? '好波！☕' : '返工先', 2000);
-      // walk back toward lounge-ish home: seat if done, else leave to settleStates/idle
       if (b.seat && b.seat.seat) {
         walkTo(b, b.seat.seat.x, b.seat.seat.z, () => { b.mode = 'sit'; b.face = b.seat.face; });
       }
@@ -314,8 +511,8 @@ export function createPickleController(deps) {
     autoTimer = setInterval(() => {
       if (match) return;
       const elig = listEligible(botList, getBotState);
-      if (elig.length >= 4 && Math.random() < 0.2) playDoubles();
-      else if (elig.length >= 2 && Math.random() < 0.35) playSingles();
+      if (elig.length >= 4 && random() < 0.2) playDoubles();
+      else if (elig.length >= 2 && random() < 0.35) playSingles();
     }, everyMs);
     return { autoIdle, everyMs };
   }
@@ -339,6 +536,9 @@ export function createPickleController(deps) {
     playerSlots,
     courtObstacles,
     courtLines,
+    SHOTS,
+    normalizeShot,
+    landingTarget,
     dispose,
   };
 }

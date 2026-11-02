@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { OrbitControls } from './vendor/OrbitControls.js?v=20261102p';
-import { createCollision } from './collision.js?v=20261102p';
-import { createPickleController, COURT, courtObstacles, courtLines, playerSlots, WORK_PRIORITY } from './pickleball.js?v=20261102p';
-import { createPickleFX } from './pickleball-fx.js?v=20261102p';
+import { OrbitControls } from './vendor/OrbitControls.js?v=20261102r';
+import { createCollision } from './collision.js?v=20261102r';
+import { createPickleController, COURT, courtObstacles, courtLines, playerSlots, WORK_PRIORITY } from './pickleball.js?v=20261102r';
+import { createPickleFX } from './pickleball-fx.js?v=20261102r';
 
 /* ---------- config ---------- */
 const STATUS = {
@@ -698,10 +698,13 @@ setInterval(buildTeam,1500);
      stopMatch() / getMatch() / setAutoIdle(bool) / onMatch(fn) / listEligible()
      court / playerSlots(mode)  — geometry for Visual
    Visual hooks: listen via onMatch(ev) or globalThis.onPickleEvent(ev)
-     ev.type = start|ready|rally|point|end|leave
+     ev.type = start|ready|serve|rally|point|end|leave
+     serve: {side,server,receiver,target:{x,z},shot}
+     rally: {n,shot,from,to,target:{x,z},fromSide,toSide}
+     point: {side,score,random:true}
    Work priority: working / waiting_user / thinking / error pulls a bot off the court. */
 const pickleball=createPickleController({botList,getBotState,walkTo,say,addFeed,onStateChange,findBot,isBlocked:b=>inFlow.has(b)});
-pickleFx=createPickleFX({ scene, THREE, findBot, pickleball });
+pickleFx=createPickleFX({ scene, THREE, findBot, pickleball, walkTo, say });
 pickleball.setAutoIdle(true, 24000);
 document.getElementById('pkSingles')?.addEventListener('click',()=>{
   const r=pickleball.playSingles(); addFeed('系統', r.ok?`單打開始`:`單打失敗：${r.error}`, r.ok?'idle':'error');
@@ -721,7 +724,7 @@ const pkQ=qp.get('pickle'); if(pkQ==='singles'||pkQ==='doubles') setTimeout(()=>
   }, 500);
 }, 1200);
 
-window.__office={bots:botList,setBotState,applyLooks,handle,setTime,startFlow,findBot,collision:COL,collisionStats:colStats,applyBotState,getBotState,onStateChange,net,pickleball,COURT,playerSlots,WORK_PRIORITY,pickleFx};
+window.__office={bots:botList,setBotState,applyLooks,handle,setTime,startFlow,findBot,collision:COL,collisionStats:colStats,applyBotState,getBotState,onStateChange,net,pickleball,COURT,playerSlots,WORK_PRIORITY,pickleFx,debugPickleShot:(s,o)=>pickleFx&&pickleFx.debugPlayShot(s,o)};
 if(qp.get('debug')==='collision') drawCollisionDebug();
 
 
