@@ -1,0 +1,31 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Roy 嘅 AI 辦公室</title><link rel="stylesheet" href="style.css"></head><body>
+<div id="app">
+ <div id="stage"><canvas id="c"></canvas><div id="labels"></div>
+  <div id="top">
+   <button id="closeBtn" title="重設視角">✕</button>
+   <div class="title"><span id="mode" class="pill">模擬</span><span id="topstat">Roy 嘅 AI 辦公室</span></div>
+   <button id="dispatch">派工</button>
+   <div id="counters"><span><i style="background:#3ddc84"></i><b id="cW">0</b> 工作</span><span><i style="background:#4f9dff"></i><b id="cT">0</b> 通話</span><span><i style="background:#ff4d5e"></i><b id="cA">0</b> 警告</span></div>
+  </div>
+  <div id="legend"></div>
+  <div id="timebar"><button data-t="now" class="on">🕒</button><button data-t="day">☀ 日</button><button data-t="evening">🌇 黃昏</button><button data-t="night">🌙 夜</button><button id="camBtn">🎥 固定</button></div>
+  <button id="simbtn">⏹ 停止模擬</button>
+ </div>
+ <aside id="side">
+  <div class="card logc"><div class="ct">事件 <span id="feedsrc" class="sm"></span></div><div id="feed"></div></div>
+  <div class="card grow"><div class="ct">團隊 <span id="tc"></span><span id="stats" class="sm"></span></div><div id="team"></div></div>
+  <div class="card compose"><div class="row"><select id="to"></select><select id="kind"><option value="say">訊息</option><option value="task">任務</option></select></div>
+   <div class="row"><input id="msg" placeholder="傳訊息俾 bot…"><button id="send">發送</button></div>
+   <div class="hint">發去 ntfy 頻道；bot 下次開工讀到先會反應。</div></div>
+ </aside>
+</div>
+<svg id="overlay"><defs><filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs></svg>
+<div id="dlg" class="modal hidden"><div class="box"><h3>派工</h3>
+ <label>交俾邊個主管／bot</label><select id="dTo"></select>
+ <label>任務內容</label><input id="dTitle" placeholder="例如：做一條 MLP 香港站宣傳短片">
+ <div class="hint" id="dHint"></div>
+ <div class="row end"><button id="dCancel">取消</button><button id="dGo" class="red">派工 ➤</button></div></div></div>
+<div id="confirm" class="modal hidden"><div class="box gold"><h3>⚠️ 需確認</h3><div id="cfWho"></div><div id="cfQ"></div><div class="row" id="cfBtns"></div></div></div>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<script type="module" src="app.js"></script></body></html>
