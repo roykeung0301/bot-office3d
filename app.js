@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { OrbitControls } from './vendor/OrbitControls.js?v=20261102b';
-import { createCollision } from './collision.js?v=20261102b';
+import { OrbitControls } from './vendor/OrbitControls.js?v=20261102c';
+import { createCollision } from './collision.js?v=20261102c';
 
 /* ---------- config ---------- */
 const STATUS = {
