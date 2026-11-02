@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { OrbitControls } from './vendor/OrbitControls.js';
+import { OrbitControls } from './vendor/OrbitControls.js?v=20261102b';
+import { createCollision } from './collision.js?v=20261102b';
 
 /* ---------- config ---------- */
 const STATUS = {
@@ -50,8 +51,8 @@ const controls = new OrbitControls(cam, canvas);
 controls.target.set(0,0,0); controls.enableDamping = true; controls.maxPolarAngle = 1.25; controls.minPolarAngle = 0.5;
 controls.minZoom = 0.6; controls.maxZoom = 4; controls.screenSpacePanning = true;
 function resize(){ const r = canvas.parentElement.getBoundingClientRect(); renderer.setSize(r.width, r.height, false);
-  const a = r.width/r.height, s = a>1.2 ? 17.5 : Math.max(11, 13.5/a); cam.left=-s*a; cam.right=s*a; cam.top=s; cam.bottom=-s; cam.updateProjectionMatrix(); }
-addEventListener('resize', resize); resize();
+  const a = r.width/r.height, s = a>1.2 ? 17.5 : Math.max(17.5, 21/a); /* 直屏按闊度取景，避免左右被切 */ cam.left=-s*a; cam.right=s*a; cam.top=s; cam.bottom=-s; cam.updateProjectionMatrix(); }
+addEventListener('resize', resize); new ResizeObserver(resize).observe(canvas.parentElement); resize();
 
 const hemi = new THREE.HemisphereLight('#bcd2ff','#3a2a1c',0.9); scene.add(hemi);
 const sun = new THREE.DirectionalLight('#fff1d6', 2.4); sun.position.set(10,30,-25); sun.castShadow = true;
@@ -237,18 +238,18 @@ function makeBot(name, team, role, color, acc, idx){
   const col=new THREE.Color(color), dark=col.clone().multiplyScalar(0.55).getStyle(), pants=col.clone().multiplyScalar(0.3).lerp(new THREE.Color('#1f2a44'),0.6).getStyle();
   const skin=SKINS[idx%4], hair=HAIRS[idx%5];
   const glasses=/glasses/.test(acc);
-  const skinM=M(skin), shirtM=new THREE.MeshStandardMaterial({map:shirtTex(color,dark),roughness:0.8});
+  const skinM=new THREE.MeshStandardMaterial({color:skin,roughness:0.75,metalness:0.05}), shirtM=new THREE.MeshStandardMaterial({map:shirtTex(color,dark),roughness:0.8});
   const hip=new THREE.Group(); hip.position.y=0.75; root.add(hip);
   const torso=box(0.5,0.75,0.25,shirtM,0,0.375,0,hip);
   const headP=new THREE.Group(); headP.position.y=0.75; hip.add(headP);
-  const hairM=M(hair); const fm=new THREE.MeshStandardMaterial({map:faceTex(skin,hair,glasses),roughness:0.8});
+  const hairM=new THREE.MeshStandardMaterial({color:hair,roughness:0.75,metalness:0.05}); const fm=new THREE.MeshStandardMaterial({map:faceTex(skin,hair,glasses),roughness:0.8});
   const head=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5),[skinM,skinM,hairM,skinM,fm,hairM]); head.position.y=0.25; head.castShadow=true; headP.add(head);
   const limb=(x,y,m,len=0.75)=>{ const p=new THREE.Group(); p.position.set(x,y,0); const b=box(0.25,len,0.25,m,0,-len/2,0,p); return p; };
   const armR=limb(-0.375,0.72,shirtM), armL=limb(0.375,0.72,shirtM); hip.add(armR,armL);
   // hands skin
   box(0.251,0.2,0.251,skinM,0,-0.65,0,armR); box(0.251,0.2,0.251,skinM,0,-0.65,0,armL);
-  const pm=M(pants); const legR=limb(-0.125,0,pm), legL=limb(0.125,0,pm); hip.add(legR,legL);
-  box(0.26,0.12,0.27,'#222',0,-0.7,0.01,legR); box(0.26,0.12,0.27,'#222',0,-0.7,0.01,legL);
+  const pm=new THREE.MeshStandardMaterial({color:pants,roughness:0.75,metalness:0.05}), shoeM=new THREE.MeshStandardMaterial({color:'#222',roughness:0.75}); const legR=limb(-0.125,0,pm), legL=limb(0.125,0,pm); hip.add(legR,legL);
+  box(0.26,0.12,0.27,shoeM,0,-0.7,0.01,legR); box(0.26,0.12,0.27,shoeM,0,-0.7,0.01,legL);
   const hand=new THREE.Group(); hand.position.set(0,-0.75,0.15); armR.add(hand);
   const A=(w,h,d,c,x,y,z,p=headP)=>box(w,h,d,c,x,y,z,p);
   if(acc==='antenna'){ A(0.56,0.06,0.1,'#222',0,0.52,0); A(0.08,0.18,0.18,'#222',-0.28,0.25,0); A(0.08,0.18,0.18,'#222',0.28,0.25,0); A(0.18,0.04,0.04,'#222',0.22,0.12,0.22);
@@ -257,7 +258,7 @@ function makeBot(name, team, role, color, acc, idx){
   if(acc==='paddle'){ box(0.06,0.3,0.06,'#333',0,-0.05,0,hand); box(0.3,0.35,0.04,'#bef264',0,-0.35,0,hand); A(0.52,0.08,0.52,'#ecfccb',0,0.5,0); A(0.52,0.04,0.2,'#ecfccb',0,0.47,0.33); }
   if(acc==='toolbelt'){ box(0.54,0.12,0.29,'#7c4a1e',0,0.06,0,hip); box(0.1,0.18,0.08,'#9ca3af',0.15,0,0.17,hip); box(0.06,0.2,0.06,'#facc15',-0.15,0,0.17,hip); A(0.54,0.12,0.54,'#facc15',0,0.52,0); }
   if(acc==='glasses_book'){ box(0.32,0.4,0.1,'#b91c1c',0,-0.1,0.05,hand); A(0.6,0.04,0.6,'#111',0,0.53,0); A(0.3,0.1,0.3,'#111',0,0.6,0); }
-  if(acc==='glasses_clip'){ box(0.3,0.4,0.03,'#a0784c',0,-0.12,0.05,hand); box(0.24,0.28,0.01,'#fff',0,-0.14,0.07,hand); A(0.52,0.08,0.52,hair,0,0.52,0); }
+  if(acc==='glasses_clip'){ box(0.3,0.4,0.03,'#a0784c',0,-0.12,0.05,hand); box(0.24,0.28,0.01,'#fff',0,-0.14,0.07,hand); A(0.52,0.08,0.52,hairM,0,0.52,0); }
   if(acc==='glasses_laptop'){ box(0.45,0.03,0.32,'#c0c4cc',0,-0.05,0.1,hand); box(0.03,0.3,0.32,'#c0c4cc',-0.2,0.1,0.1,hand); }
   if(acc==='hoodie'){ box(0.54,0.45,0.15,shirtM,0,0.0,-0.3,headP).position.set(0,0.15,-0.28); box(0.04,0.25,0.02,'#eee',-0.08,0.6,0.135,hip); box(0.04,0.25,0.02,'#eee',0.08,0.6,0.135,hip); }
   if(acc==='beret_tablet'){ const b=cyl(0.33,0.33,0.1,'#be185d',0.04,0.55,0,headP); b.rotation.z=0.15; A(0.06,0.08,0.06,'#be185d',0.04,0.63,0);
@@ -265,19 +266,45 @@ function makeBot(name, team, role, color, acc, idx){
   if(acc==='wand'){ box(0.04,0.5,0.04,'#ddd',0,-0.15,0.05,hand).rotation.x=0.6; const st=box(0.15,0.15,0.15,new THREE.MeshStandardMaterial({color:'#fde68a',emissive:'#facc15',emissiveIntensity:2}),0,-0.42,0.25,hand); st.rotation.z=0.78;
     A(0.56,0.1,0.56,'#4c1d95',0,0.52,0); A(0.3,0.3,0.3,'#4c1d95',0,0.7,0).rotation.y=0.78; }
   if(acc==='cap'){ A(0.54,0.14,0.54,'#dc2626',0,0.53,0); A(0.5,0.05,0.3,'#dc2626',0,0.47,0.38); }
-  if(acc==='chart'){ box(0.4,0.35,0.03,'#fff',0,-0.15,0.06,hand); for(let i=0;i<3;i++) box(0.07,0.08+i*0.08,0.01,'#f97316',-0.1+i*0.1,-0.27+i*0.04,0.08,hand); A(0.52,0.08,0.52,hair,0,0.52,0); }
+  if(acc==='chart'){ box(0.4,0.35,0.03,'#fff',0,-0.15,0.06,hand); for(let i=0;i<3;i++) box(0.07,0.08+i*0.08,0.01,'#f97316',-0.1+i*0.1,-0.27+i*0.04,0.08,hand); A(0.52,0.08,0.52,hairM,0,0.52,0); }
   if(acc==='magnifier'){ box(0.05,0.25,0.05,'#5b3a1e',0,-0.1,0.05,hand); const ring=new THREE.Mesh(new THREE.TorusGeometry(0.13,0.03,8,20),M('#d4d4d4',{metalness:0.8,roughness:0.2})); ring.position.set(0,-0.36,0.05); hand.add(ring);
     A(0.56,0.06,0.56,'#78350f',0,0.52,0); A(0.42,0.18,0.42,'#78350f',0,0.62,0); }
-  if(acc==='pen'){ box(0.04,0.3,0.04,'#111',0,-0.1,0.08,hand); A(0.52,0.18,0.15,hair,0,0.3,-0.3); box(0.35,0.45,0.03,'#fde2e4',0,-0.15,0.03,hand).position.x=0; }
-  if(glasses && acc!=='glasses_book'){} 
+  if(acc==='pen'){ box(0.04,0.3,0.04,'#111',0,-0.1,0.08,hand); A(0.52,0.18,0.15,hairM,0,0.3,-0.3); box(0.35,0.45,0.03,'#fde2e4',0,-0.15,0.03,hand).position.x=0; }
+  // role outfit: team badge for everyone, tie for supervisors, work style per role
+  const tc=(TEAMS[team]&&TEAMS[team].c)||'#94a3b8'; box(0.12,0.08,0.02,M(tc,{emissive:tc,emissiveIntensity:0.4}),0.13,0.58,0.135,hip,false);
+  if(/主管|Lily|帶隊|總助理/.test(name+role)){ box(0.08,0.4,0.02,M(col.clone().offsetHSL(0.5,0,-0.1).getStyle()),0,0.48,0.135,hip,false); }
+  const work=/設計|UI|特效|Visual/.test(name+role)?'draw':/研究|數據|營運|學校/.test(name+role)?'read':/劇本|編劇|事務|雜務/.test(name+role)?'write':'type';
+  // status ring under feet (colour = current state, animated by botStateFx)
+  const ring=new THREE.Mesh(new THREE.RingGeometry(0.38,0.48,28),new THREE.MeshBasicMaterial({color:'#8a93ad',transparent:true,opacity:0.7,depthWrite:false})); ring.rotation.x=-Math.PI/2; ring.position.y=0.02; root.add(ring);
+  // optional looks parts (3D glasses frame + hat slot), toggled by applyLooks
+  const glassG=new THREE.Group(); headP.add(glassG); const gm=new THREE.MeshStandardMaterial({color:'#111',roughness:0.4});
+  box(0.2,0.14,0.02,gm,-0.13,0.2,0.26,glassG); box(0.2,0.14,0.02,gm,0.13,0.2,0.26,glassG); box(0.08,0.03,0.02,gm,0,0.23,0.26,glassG);
+  glassG.visible=false; const hatG=new THREE.Group(); headP.add(hatG);
   root.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.userData.bot=name; } });
   const label=document.createElement('div'); label.className='lb'; document.getElementById('labels').appendChild(label);
   const bub=document.createElement('div'); bub.className='bub'; bub.style.display='none'; document.getElementById('labels').appendChild(bub);
   const b={name,team,role,color,acc,root,hip,headP,armR,armL,legR,legL,hand,label,bub,status:'idle',step:'',pos:new THREE.Vector3(),face:0,
-    seat:null,mode:'sit',path:[],t:Math.random()*10,bubT:0,paper:null,onArrive:null,cheer:0};
+    skin,hair,glasses,mats:{skin:skinM,hair:hairM,shirt:shirtM,pants:pm,shoe:shoeM,face:fm},glassG,hatG,torso,ring,work,pose:{la:0,ra:0,ll:0,rl:0,hx:0,hy:0,hz:0,hipY:0.75,lz:0,rz:0},seat:null,mode:'sit',path:[],t:Math.random()*10,bubT:0,paper:null,onArrive:null,cheer:0};
   bots[norm(name)]=b; botList.push(b); return b;
 }
 BOTS.forEach((d,i)=>makeBot(...d,i));
+/* custom looks: {looks:{name:{color|shirt,skin,hair,pants,shoes,hat,hatColor,glasses}}} — every field applies to its own per-bot material */
+const isCol=c=>typeof c==='string'&&/^(#[0-9a-f]{3,8}|rgb|hsl|[a-z]+$)/i.test(c.trim());
+function applyLooks(b,L){ if(!L||typeof L!=='object') return; const m=b.mats; const c=L.shirt||L.color;
+  if(isCol(c)){ b.color=c; const col=new THREE.Color(c); m.shirt.map=shirtTex(c,col.clone().multiplyScalar(0.55).getStyle()); m.shirt.needsUpdate=true;
+    if(!isCol(L.pants)) m.pants.color.copy(col.clone().multiplyScalar(0.3).lerp(new THREE.Color('#1f2a44'),0.6)); }
+  if(isCol(L.skin)){ b.skin=L.skin; m.skin.color.set(L.skin); }
+  if(isCol(L.hair)){ b.hair=L.hair; m.hair.color.set(L.hair); }
+  if(isCol(L.pants)) m.pants.color.set(L.pants);
+  if(isCol(L.shoes)) m.shoe.color.set(L.shoes);
+  if(L.glasses!==undefined) b.glassG.visible=!!L.glasses&&!b.glasses;
+  if(L.hat!==undefined){ b.hatG.clear(); const hc=isCol(L.hatColor)?L.hatColor:isCol(L.hat)?L.hat:'#dc2626'; const k=String(L.hat).toLowerCase();
+    if(L.hat&&k!=='none'&&k!=='false'){ if(k==='beanie') box(0.56,0.2,0.56,hc,0,0.56,0,b.hatG);
+      else if(k==='crown'){ box(0.54,0.1,0.54,M(hc,{metalness:0.7,roughness:0.3}),0,0.55,0,b.hatG); for(const x of [-0.2,0,0.2]) box(0.1,0.14,0.1,M(hc,{metalness:0.7,roughness:0.3}),x,0.66,0.22,b.hatG); }
+      else if(k==='tophat'){ box(0.7,0.04,0.7,hc,0,0.52,0,b.hatG); box(0.45,0.4,0.45,hc,0,0.74,0,b.hatG); }
+      else { box(0.54,0.14,0.54,hc,0,0.57,0,b.hatG); box(0.5,0.05,0.3,hc,0,0.51,0.38,b.hatG); } } }
+  m.face.map=faceTex(b.skin,b.hair,b.glasses); m.face.needsUpdate=true; }
+
 // assign seats
 const used={}; function assignSeat(b){ const arr=seats[b.team]||seats.Ops; used[b.team]=used[b.team]||0;
   let s=arr[used[b.team]++]; if(!s){ s={seat:new THREE.Vector3(-12+Math.random()*3,0,4+Math.random()*2),face:Math.PI,scr:null}; }
@@ -287,9 +314,17 @@ botList.forEach(assignSeat);
 /* ---------- behaviour ---------- */
 const LOUNGE=[[-4.5,9.4],[-3,9.4],[-6,8.2],[-2,6],[-10,-6.3],[-9.2,-6.3],[-4.5,-1.2],[-3.3,-2.5]];
 const MEET=[[2.8,-9.8],[3.9,-9.8],[5,-9.8],[2.8,-7.8],[3.9,-7.8],[5,-7.8]];
-function walkTo(b,x,z,cb){ b.path=[new THREE.Vector3(x,0,z)]; b.mode='walk'; b.onArrive=cb; }
+/* ---------- collision / pathing (programmer) ---------- */
+const COL=createCollision(Object.values(seats).flat().filter(s=>s.g).map(s=>({x:s.g.position.x,z:s.g.position.z,rot:s.g.rotation.y})));
+const colStats={frames:0,inside:0,last:null};
+function walkTo(b,x,z,cb){ const g=COL.safeGoal(x,z);
+  b.path=COL.plan(b.pos.x,b.pos.z,g.x,g.z).map(p=>new THREE.Vector3(p.x,0,p.z)); b.mode='walk'; b.onArrive=cb; }
+function collisionTick(){ for(const b of botList){ if(b.mode!=='walk') continue; colStats.frames++; const h=COL.hitAt(b.pos.x,b.pos.z); if(h){ colStats.inside++; colStats.last=b.name+'@'+h.n; } } }
+function drawCollisionDebug(){ const mat=new THREE.MeshBasicMaterial({color:'#ff2bd6',transparent:true,opacity:0.45,depthWrite:false,depthTest:false,side:THREE.DoubleSide});
+  for(const o of COL.obstacles){ const m=new THREE.Mesh(o.r!==undefined?new THREE.CircleGeometry(o.r,24):new THREE.PlaneGeometry(o.w,o.d),mat);
+    m.rotation.set(-Math.PI/2,0,0); if(o.rot) m.rotation.z=o.rot; m.position.set(o.x,0.08,o.z); m.renderOrder=999; scene.add(m); } }
 function goSeat(b){ walkTo(b,b.seat.seat.x,b.seat.seat.z,()=>{ b.mode='sit'; b.face=b.seat.face; }); }
-function setStatus(b,st,step,anim=true){ b.status=STATUS[st]?st:'idle'; if(step!==undefined) b.step=step;
+function setStatus(b,st,step,anim=true){ if(typeof setBotState==='function') setBotState(b,st,step); else { b.status=STATUS[st]?st:'idle'; if(step!==undefined) b.step=step; }
   if(b.seat.scr){ const m=b.seat.scr.material; m.emissive.set(st==='error'?'#ff3344':st==='working'?TEAMS[b.team]?.c||'#7c8cff':'#334'); m.emissiveIntensity=st==='working'?0.9:st==='error'?1.1:0.2; }
   if(!anim){ if(b.status==='idle'){ const p=LOUNGE[botList.indexOf(b)%LOUNGE.length]; b.pos.set(p[0],0,p[1]); b.mode='stand'; } else { b.pos.copy(b.seat.seat); b.face=b.seat.face; b.mode='sit'; } return; }
   if(b.busy) return;
@@ -298,6 +333,35 @@ function setStatus(b,st,step,anim=true){ b.status=STATUS[st]?st:'idle'; if(step!
   else if(b.status==='waiting_user'){ if(b.mode==='sit'||b.mode==='stand') { b.mode='standdesk'; b.pos.copy(b.seat.seat); } else goSeat(b); }
   else if(b.mode!=='sit') goSeat(b);
 }
+/* ---------- bot state → behaviour (programmer) ----------
+   Every bot has  b.state = {status, step, since}  (since = ms timestamp of the message that set it).
+   API (also on window.__office):
+     applyBotState(nameOrBot, status, step, {ts, anim})  – the single entry point for status messages
+     getBotState(name) -> {status, step, since} | null
+     onStateChange(fn)  – fn(bot, newState, prevState); returns an unsubscribe function
+   Behaviour: anim=true  → walk now (non-idle: to own seat; idle: lounge) and play the state.
+              anim=false (message >30s old / history replay) → record state only; ~0.8s after the
+              replay goes quiet, settleStates() walks every bot to the place for its LATEST state.
+   Visuals: if a setBotState(bot,status,step) function exists (Visual's BotAnim section) it is called
+   to set b.status/b.step; continuous animation reads b.status every frame. No animation code here. */
+const stateListeners=new Set();
+function onStateChange(fn){ stateListeners.add(fn); return ()=>stateListeners.delete(fn); }
+function getBotState(n){ const b=typeof n==='object'?n:findBot(n); return b?(b.state?{...b.state}:{status:b.status,step:b.step,since:0}):null; }
+let settleTimer=null;
+function applyBotState(n,status,step='',live={anim:true}){ const b=typeof n==='object'?n:findBot(n); if(!b) return null;
+  const prev=b.state||null, st=STATUS[status]?status:'idle';
+  b.state={status:st,step:String(step||''),since:live.ts||Date.now()};
+  if(live.anim) setStatus(b,st,b.state.step,true);
+  else { if(typeof setBotState==='function') setBotState(b,st,b.state.step); else { b.status=st; b.step=b.state.step; }
+    b.needsSettle=true; clearTimeout(settleTimer); settleTimer=setTimeout(settleStates,800); }
+  stateListeners.forEach(fn=>{ try{ fn(b,{...b.state},prev); }catch(e){ console.warn(e); } });
+  return b; }
+// persistent step text under the nameplate (Visual's branch has its own step label; keep one when merging)
+// merged: step text shown via Visual stepLine (stepTag unused)
+const stepTag=b=>b.step&&b.status!=='idle'&&!b.busy?`<span class="np" style="display:block;font-size:10px;opacity:.85;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.step.length>30?b.step.slice(0,29)+'…':b.step)}</span>`:'';
+function settleStates(){ for(const b of botList){ if(!b.needsSettle) continue; b.needsSettle=false;
+  const s=b.state; if(s.status==='idle'&&(b.mode==='stand'||b.mode==='walk')) continue; // already in the lounge
+  setStatus(b,s.status,s.step,true); } }
 function say(b,text,ms=4500){ b.bub.textContent=text; b.bub.style.display='block'; b.bubT=ms/1000; }
 function handover(fromB,toB,text,isTask){
   if(!toB) return; const roy=!fromB; arc(fromB?fromB.name:'Roy',toB.name,text,isTask?'#f5c542':'#4fd1c5'); if(roy) laser(toB);
@@ -334,36 +398,55 @@ function handle(o, live){
   if(!o||typeof o!=='object') return;
   if(o.roster) o.roster.forEach(n=>ensureBot(n));
   if(o.groups) for(const n in o.groups){ const b=findBot(n); if(!b) ensureBot(n,o.groups[n]); }
-  if(o.looks) for(const n in o.looks){ const b=findBot(n); if(b&&!BOTS.some(d=>norm(d[0])===norm(b.name))&&o.looks[n].color){ b.root.traverse(m=>{ if(m.isMesh&&m.material.map&&m!==b.headP.children[0]) {} }); b.color=o.looks[n].color; } }
+  if(o.looks) for(const n in o.looks){ const b=ensureBot(n); applyLooks(b,o.looks[n]); }
   if(o.chat) for(const n in o.chat){ const b=findBot(n); if(b) b.chat=o.chat[n]; }
   if(o.type==='usage'){ usage=o; renderUsage(); addFeed('系統',`本週用量 ${o.total_used_pct}%`,'idle',live.ts); }
   if(o.routines){ const r=o.routines; addFeed(r.bot,`定時任務 ${r.items?.length||0} 個`,'idle',live.ts); }
-  if(o.bot&&o.status){ const b=ensureBot(o.bot); setStatus(b,o.status,o.step||'',live.anim); addFeed(b.name,(STATUS[b.status]?.zh||o.status)+(o.step?'：'+o.step:''),b.status,live.ts); if(live.anim&&o.step) say(b,o.step,3000); if(LIVE&&live.anim&&b.status==='waiting_user') confirmBox(b,o.step||'需要你決定',['A：批准繼續','B：退回修改'],ch=>post({say:{from:'Roy',to:b.name,text:ch}})); }
+  if(o.bot&&o.status){ const b=ensureBot(o.bot); applyBotState(b,o.status,o.step||'',live); addFeed(b.name,(STATUS[b.status]?.zh||o.status)+(o.step?'：'+o.step:''),b.status,live.ts); if(live.anim&&o.step) say(b,o.step,3000); if(LIVE&&live.anim&&b.status==='waiting_user') confirmBox(b,o.step||'需要你決定',['A：批准繼續','B：退回修改'],ch=>post({say:{from:'Roy',to:b.name,text:ch}})); }
   if(o.say){ const s=o.say, to=findBot(s.to), from=s.from==='Roy'?null:findBot(s.from); addFeed(s.from||'?',`→ ${s.to}：${s.text}`,'talking',live.ts); if(live.anim&&to) handover(from,to,s.text,false); }
   if(o.task){ const t=o.task, to=findBot(t.to), from=t.from==='Roy'?null:findBot(t.from); addFeed(t.from||'?',`交任務俾 ${t.to}：${t.title}${t.status?'（'+t.status+'）':''}`,'talking',live.ts); if(live.anim&&to) handover(from,to,t.title,true); }
   buildTeam();
 }
 
-/* ---------- ntfy ---------- */
+/* ---------- ntfy (connection logic) ----------
+   Live mode = URL #hash topic. Transport = 3s HTTP poll of /json?poll=1&since=<lastId> (iPhone Safari
+   receives nothing over SSE, so SSE was removed). Every message id is applied once; after failures the
+   next successful poll resumes from lastId, so missed messages are caught up. Topic is never displayed.
+   Optional ?ntfy=http://localhost:PORT points at a local mock server (tests only; localhost only). */
 const topic=decodeURIComponent(location.hash.slice(1)).trim();
 const LIVE=/^[\w-]{1,64}$/.test(topic);
+const NTFY=(()=>{ const q=new URLSearchParams(location.search).get('ntfy'); return q&&/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(q)?q:'https://ntfy.sh'; })();
+const POLL_MS=+(new URLSearchParams(location.search).get('pollms'))||3000;
 let sim=!LIVE;
-document.getElementById('mode').textContent=LIVE?'● v3 連線中…':'模擬 Demo';
+const net={transport:'poll',state:'off',polls:0,okPolls:0,fails:0,consecFails:0,lastErr:'',applied:0,dupes:0,bad:0,lastId:null,lastTime:0};
+const seenIds=new Set();
+const modeEl=document.getElementById('mode');
+document.getElementById('mode').textContent=LIVE?'● Live · 連線中…':'模擬 Demo';
 document.getElementById('feedsrc').textContent=LIVE?'ntfy':'Simulated';
-if(LIVE){ let lastId='12h', seen=new Set(), first=true;
-  const setMode=t=>{ document.getElementById('mode').textContent=t; };
-  function xhrGet(url,ms){ return new Promise((res,rej)=>{ const x=new XMLHttpRequest(); x.open('GET',url); x.timeout=ms; x.onload=()=>x.status===200?res(x.responseText):rej(new Error('HTTP '+x.status)); x.onerror=()=>rej(new Error('network')); x.ontimeout=()=>rej(new Error('timeout')); x.send(); }); }
-  let busy=false, tries=0;
-  async function pollOnce(){ if(busy) return; busy=true; tries++; setMode('● v4 連線中 #'+tries+'…');
-    try{ const url=`https://ntfy.sh/${encodeURIComponent(topic)}/json?poll=1&since=${lastId}`; const txt=await xhrGet(url,10000);
-      const lines=txt.split('\n').filter(Boolean);
-      for(const ln of lines){ let m; try{ m=JSON.parse(ln); }catch(e){ continue; } if(m.id) lastId=m.id; if(m.event!=='message'||seen.has(m.id)) continue; seen.add(m.id);
-        try{ const o=JSON.parse(m.message); const ts=m.time*1000; handle(o,{ts,anim:!first&&Date.now()-ts<60000}); }catch(err){} }
-      first=false; setMode('● Live v4 · '+seen.size+' 條');
-    }catch(e){ setMode('⚠ 連線失敗：'+(e&&e.message||e)+' #'+tries); } busy=false; }
-  pollOnce(); setInterval(pollOnce,3000);
-  document.getElementById('simbtn').style.display='none'; }
-async function post(o){ if(LIVE){ await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}`,{method:'POST',body:JSON.stringify(o)}); } else handle(o,{ts:Date.now(),anim:true}); }
+function renderNet(){ if(!LIVE) return; let t=net.state==='error'?`⚠ 連線失敗（${net.lastErr}）· ${net.applied} 條`:`● Live · ${net.applied} 條`;
+  if(net.bad) t+=` · 壞訊息 ${net.bad}`; modeEl.textContent=t; modeEl.title=`poll ${net.okPolls}/${net.polls}，失敗 ${net.fails}，重複 ${net.dupes}`; }
+function ntfyOnMessage(data){
+  let m; try{ m=typeof data==='string'?JSON.parse(data):data; }catch(e){ net.bad++; return; }
+  if(!m||typeof m!=='object'||m.event!=='message') return;
+  if(m.id){ if(seenIds.has(m.id)){ net.dupes++; return; } seenIds.add(m.id); net.lastId=m.id; }
+  net.lastTime=Math.max(net.lastTime,m.time||0);
+  let o; try{ o=JSON.parse(m.message); }catch(e){ net.bad++; return; }
+  if(!o||typeof o!=='object'){ net.bad++; return; }
+  const ts=(m.time||Date.now()/1000)*1000;
+  try{ handle(o,{ts,anim:Date.now()-ts<30000}); net.applied++; }catch(err){ net.bad++; console.warn('ntfy handle error',err); }
+}
+let polling=false;
+async function pollOnce(){ if(polling) return; polling=true; net.polls++;
+  try{ const since=net.lastId||'12h';
+    const r=await fetch(`${NTFY}/${encodeURIComponent(topic)}/json?poll=1&since=${encodeURIComponent(since)}`,{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const txt=await r.text();
+    for(const ln of txt.split('\n')){ if(ln.trim()) ntfyOnMessage(ln); }
+    net.okPolls++; net.consecFails=0; net.state='open'; net.lastErr='';
+  }catch(e){ net.fails++; net.consecFails++; net.state='error'; net.lastErr=String(e&&e.message||e).slice(0,40); }
+  finally{ polling=false; renderNet(); } }
+if(LIVE){ pollOnce(); setInterval(pollOnce,POLL_MS); document.getElementById('simbtn').style.display='none'; }
+async function post(o){ if(LIVE){ await fetch(`${NTFY}/${encodeURIComponent(topic)}`,{method:'POST',body:JSON.stringify(o)}); } else handle(o,{ts:Date.now(),anim:true}); }
 
 /* ---------- simulation ---------- */
 function simTick(){ if(!sim) return; const r=Math.random();
@@ -400,7 +483,12 @@ function buildTeamOld(){
   if(toSel.options.length!==botList.length) toSel.innerHTML=botList.map(b=>`<option>${esc(b.name)}</option>`).join('');
   const cnt=s=>botList.filter(b=>b.status===s).length;
   document.getElementById('stats').innerHTML=`<span style="color:#aab4ff">● ${cnt('working')} 工作中</span><span style="color:#ffb27a">● ${cnt('waiting_user')} 等你</span><span style="color:#f5d36b">● ${cnt('thinking')} 思考中</span><span>○ ${cnt('idle')} 閒置</span><span style="color:#ff7a86">● ${cnt('error')} 出錯</span>`+(usage?`<span>本週用量 ${usage.total_used_pct}%</span>`:''); }
-teamEl.onclick=e=>{ const t=e.target.closest('.ac'); if(!t) return; const b=findBot(t.dataset.n); toSel.value=b.name; controls.target.copy(b.root.position); cam.zoom=2.2; cam.updateProjectionMatrix(); };
+// camera zoom by stage aspect: landscape (a>=1) unchanged (1.2 / 2.2); portrait zooms in less so the
+// whole office / the whole team cluster stays visible (scaled by aspect, with floors).
+function stageAspect(){ const r=canvas.getBoundingClientRect(); return r.height?r.width/r.height:1; }
+function homeZoom(a){ return a>=1?1.2:Math.max(0.9,1.2*a); }
+function teamZoom(a){ return a>=1?2.2:Math.max(1.3,2.2*a); }
+teamEl.onclick=e=>{ const t=e.target.closest('.ac'); if(!t) return; const b=findBot(t.dataset.n); toSel.value=b.name; controls.target.copy(b.root.position); cam.zoom=teamZoom(stageAspect()); cam.updateProjectionMatrix(); };
 document.getElementById('legend').innerHTML=['working','thinking','waiting_user','error','idle','done'].map(s=>`<span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${STATUS[s].c}"></i> ${STATUS[s].zh}</span>`).join('');
 document.getElementById('send').onclick=async()=>{ const t=document.getElementById('msg').value.trim(); if(!t) return; const to=toSel.value, k=document.getElementById('kind').value;
   const o=k==='task'?{task:{from:'Roy',to,title:t,status:'新'}}:{say:{from:'Roy',to,text:t}}; document.getElementById('msg').value='';
@@ -447,30 +535,74 @@ function animBot(b,dt){ b.t+=dt; const t=b.t;
   let dy=r.rotation.y; let diff=((face-dy+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI; r.rotation.y=dy+diff*Math.min(1,dt*8);
   r.position.copy(b.pos);
   const st=b.status, sitting=b.mode==='sit';
-  let la=0,ra=0,ll=0,rl=0,headX=0,headY=0,headZ=0,hipY=0.75,lz=0,rz=0;
-  if(b.mode==='walk'){ const s=Math.sin(t*10); ll=s*0.7; rl=-s*0.7; la=-s*0.6; ra=s*0.6; hipY=0.75+Math.abs(Math.cos(t*10))*0.04; }
+  let la=0,ra=0,ll=0,rl=0,headX=0,headY=0,headZ=0,hipY=0.75,lz=0,rz=0, breath=1+Math.sin(t*2.2)*0.012;
+  if(b.mode==='walk'){ const s=Math.sin(t*10); ll=s*0.7; rl=-s*0.7; la=-s*0.6; ra=s*0.6; lz=-0.05; rz=0.05; hipY=0.75+Math.abs(Math.cos(t*10))*0.05; headX=Math.sin(t*20)*0.02; }
   else if(sitting){ ll=rl=-Math.PI/2; hipY=0.58;
-    if(st==='working'){ la=ra=-1.25; la+=Math.sin(t*22)*0.08; ra+=Math.cos(t*19)*0.08; headX=0.12+Math.sin(t*2)*0.03; }
+    if(st==='working'){ const w=b.work;
+      if(w==='type'){ la=ra=-1.25; la+=Math.sin(t*22)*0.08; ra+=Math.cos(t*19)*0.08; headX=0.12+Math.sin(t*2)*0.03; headY=Math.sin(t*0.5)*0.08; }
+      else if(w==='read'){ la=-1.3; ra=-1.1+Math.sin(t*0.7)*0.05; headX=0.05+Math.sin(t*0.4)*0.04; headY=Math.sin(t*0.9)*0.18; if(Math.sin(t*0.35)>0.95) ra=-1.6; }
+      else if(w==='write'){ la=-1.0; ra=-1.2+Math.sin(t*9)*0.06; rz=Math.sin(t*4.5)*0.12; headX=0.25; }
+      else { la=-0.9; ra=-1.5+Math.sin(t*3)*0.15; rz=0.1+Math.sin(t*2.3)*0.2; headX=0.1; headY=Math.sin(t*1.3)*0.12; } }
     else if(st==='thinking'){ ra=-2.4; rz=0.35; la=-0.9; headZ=Math.sin(t*1.2)*0.12; headX=-0.15; }
     else if(st==='error'){ la=ra=-1.0; headY=Math.sin(t*9)*0.35; }
-    else { la=ra=-0.5; headX=Math.sin(t*0.8)*0.05; } }
+    else if(st==='waiting_user'){ la=-0.5; ra=-2.9+Math.sin(t*6)*0.25; rz=0.25; headX=-0.15; headY=Math.sin(t*2)*0.2; }
+    else if(st==='done'){ la=-0.5; ra=-2.6+Math.sin(t*3)*0.12; rz=0.15; headX=-0.1+Math.sin(t*3)*0.06; }
+    else { la=ra=-0.5; headX=Math.sin(t*0.8)*0.05; headY=Math.sin(t*0.37)*0.3; } }
   else if(b.mode==='talk'){ ra=-0.9+Math.sin(t*6)*0.4; la=Math.sin(t*5)*0.15; headX=Math.sin(t*7)*0.08; }
-  else { la=Math.sin(t*1.5)*0.05; ra=-la; hipY=0.75+Math.sin(t*2)*0.01;
-    if(st==='waiting_user'){ ra=-2.9+Math.sin(t*6)*0.25; rz=0.2; } }
+  else { la=Math.sin(t*1.5)*0.05; ra=-la; lz=-0.06; rz=0.06; hipY=0.75+Math.sin(t*2.2)*0.012; breath=1+Math.sin(t*2.2)*0.02;
+    const look=Math.sin(t*0.31)+Math.sin(t*0.53); headY=Math.abs(look)>1.2?Math.sign(look)*0.5:0; headX=Math.sin(t*0.7)*0.04;
+    if(st==='waiting_user'){ ra=-2.9+Math.sin(t*6)*0.25; rz=0.2; headY=0; hipY+=Math.abs(Math.sin(t*3))*0.03; }
+    else if(st==='thinking'){ ra=-2.4; rz=0.35; la=-0.4; headZ=Math.sin(t*1.2)*0.12; headX=-0.2; }
+    else if(st==='error'){ la=-2.6; ra=-2.6; lz=-0.6; rz=0.6; headY=Math.sin(t*9)*0.3; }
+    else if(st==='done'){ ra=-2.6+Math.sin(t*3)*0.12; rz=0.15; headX=-0.1; hipY+=Math.abs(Math.sin(t*4))*0.02; }
+    else if(st==='working'){ ra=-1.2+Math.sin(t*8)*0.1; la=-0.3; headX=0.2; } }
   if(b.cheer>0){ b.cheer-=dt; la=ra=-2.9; lz=-0.3; rz=0.3; hipY+=Math.abs(Math.sin(t*9))*0.15; }
-  b.hip.position.y=hipY; b.legL.rotation.x=ll; b.legR.rotation.x=rl; b.armL.rotation.set(la,0,lz); b.armR.rotation.set(ra,0,rz);
-  b.headP.rotation.set(headX,headY,headZ);
+  // smooth state transitions: exponential lerp toward target pose (walk uses fast follow so swing stays crisp)
+  const P=b.pose, k=Math.min(1,dt*(b.mode==='walk'?18:7)), L=(o,n)=>o+(n-o)*k;
+  P.la=L(P.la,la); P.ra=L(P.ra,ra); P.ll=L(P.ll,ll); P.rl=L(P.rl,rl); P.lz=L(P.lz,lz); P.rz=L(P.rz,rz);
+  P.hx=L(P.hx,headX); P.hy=L(P.hy,headY); P.hz=L(P.hz,headZ); P.hipY=L(P.hipY,hipY);
+  b.hip.position.y=P.hipY; b.legL.rotation.x=P.ll; b.legR.rotation.x=P.rl; b.armL.rotation.set(P.la,0,P.lz); b.armR.rotation.set(P.ra,0,P.rz);
+  b.headP.rotation.set(P.hx,P.hy,P.hz); b.torso.scale.set(breath,1,breath);
+  botStateFx(b,dt);
   if(sitting && b.seat.scr && st==='working') b.seat.scr.material.emissiveIntensity=0.75+Math.sin(t*3)*0.15;
   if(b.bubT>0){ b.bubT-=dt; if(b.bubT<=0) b.bub.style.display='none'; }
 }
+/* ---------- BotAnim (Visual 程式員): continuous per-state FX, runs every frame ----------
+   Interface: setBotState(nameOrBot, state, step) only updates b.status / b.step (no walking/seat logic);
+   animBot()+botStateFx() read b.status every frame, so any code that sets b.status gets looping anims. */
+const FX_RATE={working:6,thinking:1.6,waiting_user:4,error:10,done:2,idle:0.8};
+const _fxc=new THREE.Color();
+function botStateFx(b,dt){ const st=b.busy?'talking':b.status, t=b.t, S=STATUS[st]||STATUS.idle, m=b.ring.material;
+  _fxc.set(S.c); m.color.lerp(_fxc,Math.min(1,dt*5)); const w=FX_RATE[st]||1;
+  const pulse=0.5+0.5*Math.sin(t*w); m.opacity=st==='error'?(pulse>0.5?0.95:0.25):0.35+pulse*0.45;
+  b.ring.scale.setScalar(1+(st==='waiting_user'||st==='done'?pulse*0.25:pulse*0.08));
+  const scr=b.seat&&b.seat.scr; if(scr&&b.mode==='sit'&&!b.busy){ const sm=scr.material;
+    if(st==='working') sm.emissiveIntensity=0.7+Math.sin(t*3)*0.12+(Math.sin(t*37)>0.92?0.35:0);
+    else if(st==='error') sm.emissiveIntensity=pulse>0.5?1.2:0.3;
+    else if(st==='thinking') sm.emissiveIntensity=0.35+pulse*0.2; } }
+function setBotState(n,state,step){ const b=typeof n==='object'?n:findBot(n); if(!b) return null; b.status=STATUS[state]?state:'idle'; if(step!==undefined) b.step=String(step||''); return b; }
+const stepLine=s=>{ s=String(s||'').replace(/\s+/g,' ').trim(); return s.length>34?s.slice(0,33)+'…':s; };
+/* ---------- label declutter (Visual): priority = selected > busy/error/working > near camera ----------
+   portrait: only top LABEL_FULL_PORTRAIT bots get full labels, rest short name; overlapping lower-priority labels hide. */
+const LABEL_PRI={error:100,working:90,waiting_user:95,talking:85,thinking:60,done:40,idle:0,walking:20};
+const LABEL_FULL_PORTRAIT=4; let _dcF=0;
+function declutterLabels(){ if((_dcF++)%4) return; const portrait=innerHeight>innerWidth, sel=document.getElementById('to')?.value;
+  if(!(portrait||innerWidth<=800)){ botList.forEach(b=>{ b._short=false; b.label.style.visibility=''; b.bub.style.visibility=''; }); return; } // merged: declutter only on portrait/narrow screens
+  const cp=cam.position, items=botList.map(b=>{ const st=b.busy?'talking':b.mode==='walk'?'walking':b.status;
+    return {b,pri:(b.name===sel?1000:0)+(LABEL_PRI[st]||0)-b.root.position.distanceTo(cp)*0.5}; }).sort((x,y)=>y.pri-x.pri);
+  const placed=[]; const hit=r=>placed.some(q=>r.left<q.right-2&&r.right>q.left+2&&r.top<q.bottom-2&&r.bottom>q.top+2);
+  items.forEach(({b},i)=>{ b._short=portrait&&i>=LABEL_FULL_PORTRAIT;
+    if(b.bubT>0){ b.bub.style.visibility=''; const r=b.bub.getBoundingClientRect(); if(hit(r)) b.bub.style.visibility='hidden'; else placed.push(r); }
+    b.label.style.visibility=''; const r=b.label.getBoundingClientRect(); if(hit(r)) b.label.style.visibility='hidden'; else placed.push(r); }); }
 const W=new THREE.Vector3();
 function placeDom(el,obj,yoff){ W.copy(obj.position); W.y+=yoff; W.project(cam); const r=canvas.getBoundingClientRect();
   el.style.left=((W.x+1)/2*r.width)+'px'; el.style.top=((1-W.y)/2*r.height)+'px'; }
-function loop(){ const dt=Math.min(clk.getDelta(),0.05); controls.update();
+function loop(){ const dt=Math.min(clk.getDelta(),0.05); controls.update(); collisionTick();
   botList.forEach(b=>{ animBot(b,dt); const S=STATUS[b.busy?'talking':b.mode==='walk'?'walking':b.status];
-    const tb=(b.status==='working'&&!b.busy&&b.mode==='sit')?tool(b.step):(b.mode==='walk'||b.busy?'':S.ic); const html=`${tb?`<span class="tool">${tb}</span>`:''}<span class="np"><i style="background:${S.c}"></i>${esc(b.name)}<small>${esc(b.role)}</small></span>`; if(b.label._h!==html){ b.label.innerHTML=html; b.label._h=html; }
+    const tb=(b.status==='working'&&!b.busy&&b.mode==='sit')?tool(b.step):(b.mode==='walk'||b.busy?'':S.ic); const stp=b.step&&b.status!=='idle'?`<small class="st" style="display:block;max-width:${b._short?130:170}px;white-space:normal;line-height:1.2;opacity:.85">${esc(stepLine(b.step))}</small>`:''; const html=b._short?`<span class="np"><i style="background:${S.c}"></i>${esc(b.name)}${stp}</span>`:`${tb?`<span class="tool">${tb}</span>`:''}<span class="np"><i style="background:${S.c}"></i>${esc(b.name)}<small>${esc(b.role)}</small>${stp}</span>`; if(b.label._h!==html){ b.label.innerHTML=html; b.label._h=html; }
     placeDom(b.label,b.root,(b.mode==='sit'?1.95:2.2)+(b.status==='waiting_user'&&!b.busy?Math.abs(Math.sin(b.t*4))*0.25:0));
     if(b.bubT>0) placeDom(b.bub,b.root,2.9); });
+  declutterLabels();
   for(let i=flights.length-1;i>=0;i--){ const f=flights[i]; f.t+=dt; if(f.t<0){ f.m.visible=false; continue; } f.m.visible=true; const k=Math.min(1,f.t/f.dur), to=f.to();
     f.m.position.lerpVectors(f.from,to,k); f.m.position.y+=Math.sin(k*Math.PI)*(f.arc||1.5); f.m.rotation.y+=dt*6;
     if(k>=1){ scene.remove(f.m); flights.splice(i,1); f.done&&f.done(); } }
@@ -530,9 +662,10 @@ document.getElementById('dGo').onclick=async()=>{ const title=document.getElemen
   else startFlow(sup,title); };
 document.getElementById('dTitle').onkeydown=e=>{ if(e.key==='Enter') document.getElementById('dGo').click(); };
 // fixed camera / reset
-let fixed=false; const home=()=>{ controls.target.set(0,0,0); cam.position.set(38,34,38); cam.zoom=1.2; cam.updateProjectionMatrix(); };
+let fixed=false; const home=()=>{ controls.target.set(0,0,0); cam.position.set(38,34,38); cam.zoom=homeZoom(stageAspect()); cam.updateProjectionMatrix(); };
 document.getElementById('camBtn').onclick=e=>{ fixed=!fixed; controls.enableRotate=!fixed; if(fixed) home(); e.target.textContent=fixed?'🎥 自由':'🎥 固定'; };
 document.getElementById('closeBtn').onclick=home;
 setInterval(buildTeam,1500);
-window.__office={bots:botList,handle,setTime,startFlow,findBot};
+window.__office={bots:botList,setBotState,applyLooks,handle,setTime,startFlow,findBot,collision:COL,collisionStats:colStats,applyBotState,getBotState,onStateChange,net};
+if(qp.get('debug')==='collision') drawCollisionDebug();
 
