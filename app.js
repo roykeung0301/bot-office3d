@@ -1,6 +1,8 @@
 import * as THREE from 'three';
-import { OrbitControls } from './vendor/OrbitControls.js?v=20261102c';
-import { createCollision } from './collision.js?v=20261102c';
+import { OrbitControls } from './vendor/OrbitControls.js?v=20261102p';
+import { createCollision } from './collision.js?v=20261102p';
+import { createPickleController, COURT, courtObstacles, courtLines, playerSlots, WORK_PRIORITY } from './pickleball.js?v=20261102p';
+import { createPickleFX } from './pickleball-fx.js?v=20261102p';
 
 /* ---------- config ---------- */
 const STATUS = {
@@ -218,6 +220,25 @@ const dashTV=box(3.2,1.9,0.1,new THREE.MeshBasicMaterial({color:'#fff'}),9.5,3.4
   for(let sh=0;sh<3;sh++) for(let i=0;i<10;i++) box(0.17,0.48,0.36,['#e35d5b','#4f8fe6','#f2c14e','#58b368','#9b6bd3','#eee'][(i+sh*2)%6],-1.0+i*0.22,0.5+sh*0.8,0.05,bs);
 }
 for(const [x,z,s] of [[-14,11.6,1.2],[14,10,1.1],[-14,-4.8,1],[7.8,-7,1],[-1.5,-6,0.9],[6,6.6,1],[-8.5,5,0.9],[14,1.5,1],[-0.5,10.2,0.8]]) plant(x,z,s);
+/* ---------- pickleball patio (real 44×20 ft → metres) ---------- */
+{ const C=COURT, hx=C.length/2, hz=C.width/2;
+  const patio=box(C.length+3.2,0.35,C.width+4.2,new THREE.MeshStandardMaterial({color:'#3d4658',roughness:0.95}),C.cx,-0.18,C.cz); patio.castShadow=false;
+  const surf=box(C.length,0.04,C.width,new THREE.MeshStandardMaterial({color:'#2f6f4e',roughness:0.9}),C.cx,0.02,C.cz); surf.castShadow=false;
+  const lineMat=new THREE.MeshBasicMaterial({color:'#f4f7fa'});
+  const line=(w,d,x,z)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,0.03,d),lineMat); m.position.set(x,0.05,z); m.castShadow=false; scene.add(m); return m; };
+  line(0.06,C.width,C.cx-hx,C.cz); line(0.06,C.width,C.cx+hx,C.cz);
+  line(C.length,0.06,C.cx,C.cz-hz); line(C.length,0.06,C.cx,C.cz+hz);
+  line(0.05,C.width,C.cx-C.nvz,C.cz); line(0.05,C.width,C.cx+C.nvz,C.cz);
+  line(0.04,C.width,C.cx,C.cz);
+  const netG=new THREE.Group(); netG.position.set(C.cx,0,C.cz); scene.add(netG);
+  cyl(0.07,0.07,C.netHSide,'#dddddd',0,C.netHSide/2,-hz-0.05,netG,10);
+  cyl(0.07,0.07,C.netHSide,'#dddddd',0,C.netHSide/2,hz+0.05,netG,10);
+  const net=new THREE.Mesh(new THREE.PlaneGeometry(C.width,C.netHCenter),
+    new THREE.MeshStandardMaterial({color:'#111',transparent:true,opacity:0.55,side:THREE.DoubleSide,roughness:0.8}));
+  net.rotation.y=Math.PI/2; net.position.set(0,C.netHCenter/2,0); netG.add(net);
+  box(0.04,0.03,C.width,'#f8fafc',0,C.netHCenter+0.02,0,netG,false);
+  textPlane('PICKLEBALL 44×20 ft', C.length*0.55, 0.32, '#cfe8d8', C.cx, 0.06, C.cz+hz+0.85);
+}
 // lights (practicals)
 const lamps=[];
 for(const [x,y,z] of [[-10,4.8,1],[10,4.8,-2.8],[1,4.8,2.6],[10.5,4.8,6.8],[-4,4.8,7.6],[-10,4.8,-8],[3.9,3.4,-8.8]]){
@@ -315,13 +336,14 @@ botList.forEach(assignSeat);
 const LOUNGE=[[-4.5,9.4],[-3,9.4],[-6,8.2],[-2,6],[-10,-6.3],[-9.2,-6.3],[-4.5,-1.2],[-3.3,-2.5]];
 const MEET=[[2.8,-9.8],[3.9,-9.8],[5,-9.8],[2.8,-7.8],[3.9,-7.8],[5,-7.8]];
 /* ---------- collision / pathing (programmer) ---------- */
-const COL=createCollision(Object.values(seats).flat().filter(s=>s.g).map(s=>({x:s.g.position.x,z:s.g.position.z,rot:s.g.rotation.y})));
+const COL=createCollision(Object.values(seats).flat().filter(s=>s.g).map(s=>({x:s.g.position.x,z:s.g.position.z,rot:s.g.rotation.y})),[...courtObstacles(),...courtLines()]);
 const colStats={frames:0,inside:0,last:null};
 function walkTo(b,x,z,cb){ const g=COL.safeGoal(x,z);
   b.path=COL.plan(b.pos.x,b.pos.z,g.x,g.z).map(p=>new THREE.Vector3(p.x,0,p.z)); b.mode='walk'; b.onArrive=cb; }
 function collisionTick(){ for(const b of botList){ if(b.mode!=='walk') continue; colStats.frames++; const h=COL.hitAt(b.pos.x,b.pos.z); if(h){ colStats.inside++; colStats.last=b.name+'@'+h.n; } } }
 function drawCollisionDebug(){ const mat=new THREE.MeshBasicMaterial({color:'#ff2bd6',transparent:true,opacity:0.45,depthWrite:false,depthTest:false,side:THREE.DoubleSide});
-  for(const o of COL.obstacles){ const m=new THREE.Mesh(o.r!==undefined?new THREE.CircleGeometry(o.r,24):new THREE.PlaneGeometry(o.w,o.d),mat);
+  const lineMat=new THREE.MeshBasicMaterial({color:'#2ee6ff',transparent:true,opacity:0.7,depthWrite:false,depthTest:false,side:THREE.DoubleSide});
+  for(const o of COL.obstacles){ const m=new THREE.Mesh(o.r!==undefined?new THREE.CircleGeometry(o.r,24):new THREE.PlaneGeometry(o.w,o.d),o.pass?lineMat:mat);
     m.rotation.set(-Math.PI/2,0,0); if(o.rot) m.rotation.z=o.rot; m.position.set(o.x,0.08,o.z); m.renderOrder=999; scene.add(m); } }
 function goSeat(b){ walkTo(b,b.seat.seat.x,b.seat.seat.z,()=>{ b.mode='sit'; b.face=b.seat.face; }); }
 function setStatus(b,st,step,anim=true){ if(typeof setBotState==='function') setBotState(b,st,step); else { b.status=STATUS[st]?st:'idle'; if(step!==undefined) b.step=step; }
@@ -360,6 +382,7 @@ function applyBotState(n,status,step='',live={anim:true}){ const b=typeof n==='o
 // merged: step text shown via Visual stepLine (stepTag unused)
 const stepTag=b=>b.step&&b.status!=='idle'&&!b.busy?`<span class="np" style="display:block;font-size:10px;opacity:.85;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.step.length>30?b.step.slice(0,29)+'…':b.step)}</span>`:'';
 function settleStates(){ for(const b of botList){ if(!b.needsSettle) continue; b.needsSettle=false;
+  if(b.pickle) continue; // mid-match; work-priority release handled in pickle controller
   const s=b.state; if(s.status==='idle'&&(b.mode==='stand'||b.mode==='walk')) continue; // already in the lounge
   setStatus(b,s.status,s.step,true); } }
 function say(b,text,ms=4500){ b.bub.textContent=text; b.bub.style.display='block'; b.bubT=ms/1000; }
@@ -527,16 +550,19 @@ buildTeam();
 
 /* ---------- animate ---------- */
 const clk=new THREE.Clock(), v=new THREE.Vector3();
+let pickleFx=null; // assigned after pickleball controller
 function animBot(b,dt){ b.t+=dt; const t=b.t;
   if(b.mode==='walk'&&b.path.length){ const tg=b.path[0]; v.subVectors(tg,b.pos); v.y=0; const d=v.length();
     if(d<0.08){ b.path.shift(); if(!b.path.length){ const cb=b.onArrive; b.onArrive=null; b.mode='stand'; cb&&cb(); } }
-    else { v.normalize(); b.pos.addScaledVector(v,Math.min(d,dt*2.6)); b.face=Math.atan2(v.x,v.z); } }
+    else { v.normalize(); b.pos.addScaledVector(v,Math.min(d,dt*(b.walkSpeed||2.6))); b.face=Math.atan2(v.x,v.z); } }
   const r=b.root; let face=b.face; if(b.talking>0){ b.talking-=dt; if(b.mode!=='sit') face=b.talkFace; }
   let dy=r.rotation.y; let diff=((face-dy+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI; r.rotation.y=dy+diff*Math.min(1,dt*8);
   r.position.copy(b.pos);
   const st=b.status, sitting=b.mode==='sit';
   let la=0,ra=0,ll=0,rl=0,headX=0,headY=0,headZ=0,hipY=0.75,lz=0,rz=0, breath=1+Math.sin(t*2.2)*0.012;
-  if(b.mode==='walk'){ const s=Math.sin(t*10); ll=s*0.7; rl=-s*0.7; la=-s*0.6; ra=s*0.6; lz=-0.05; rz=0.05; hipY=0.75+Math.abs(Math.cos(t*10))*0.05; headX=Math.sin(t*20)*0.02; }
+  const pk=b.pickle&&pickleFx?pickleFx.poseFor(b):null;
+  if(pk){ la=pk.la; ra=pk.ra; ll=pk.ll; rl=pk.rl; lz=pk.lz; rz=pk.rz; headX=pk.hx; headY=pk.hy; headZ=pk.hz; hipY=pk.hipY; }
+  else if(b.mode==='walk'){ const s=Math.sin(t*10); ll=s*0.7; rl=-s*0.7; la=-s*0.6; ra=s*0.6; lz=-0.05; rz=0.05; hipY=0.75+Math.abs(Math.cos(t*10))*0.05; headX=Math.sin(t*20)*0.02; }
   else if(sitting){ ll=rl=-Math.PI/2; hipY=0.58;
     if(st==='working'){ const w=b.work;
       if(w==='type'){ la=ra=-1.25; la+=Math.sin(t*22)*0.08; ra+=Math.cos(t*19)*0.08; headX=0.12+Math.sin(t*2)*0.03; headY=Math.sin(t*0.5)*0.08; }
@@ -558,7 +584,7 @@ function animBot(b,dt){ b.t+=dt; const t=b.t;
     else if(st==='working'){ ra=-1.2+Math.sin(t*8)*0.1; la=-0.3; headX=0.2; } }
   if(b.cheer>0){ b.cheer-=dt; la=ra=-2.9; lz=-0.3; rz=0.3; hipY+=Math.abs(Math.sin(t*9))*0.15; }
   // smooth state transitions: exponential lerp toward target pose (walk uses fast follow so swing stays crisp)
-  const P=b.pose, k=Math.min(1,dt*(b.mode==='walk'?18:7)), L=(o,n)=>o+(n-o)*k;
+  const P=b.pose, k=Math.min(1,dt*(b.mode==='walk'?18:b.pickle?14:7)), L=(o,n)=>o+(n-o)*k;
   P.la=L(P.la,la); P.ra=L(P.ra,ra); P.ll=L(P.ll,ll); P.rl=L(P.rl,rl); P.lz=L(P.lz,lz); P.rz=L(P.rz,rz);
   P.hx=L(P.hx,headX); P.hy=L(P.hy,headY); P.hz=L(P.hz,headZ); P.hipY=L(P.hipY,hipY);
   b.hip.position.y=P.hipY; b.legL.rotation.x=P.ll; b.legR.rotation.x=P.rl; b.armL.rotation.set(P.la,0,P.lz); b.armR.rotation.set(P.ra,0,P.rz);
@@ -597,7 +623,7 @@ function declutterLabels(){ if((_dcF++)%4) return; const portrait=innerHeight>in
 const W=new THREE.Vector3();
 function placeDom(el,obj,yoff){ W.copy(obj.position); W.y+=yoff; W.project(cam); const r=canvas.getBoundingClientRect();
   el.style.left=((W.x+1)/2*r.width)+'px'; el.style.top=((1-W.y)/2*r.height)+'px'; }
-function loop(){ const dt=Math.min(clk.getDelta(),0.05); controls.update(); collisionTick();
+function loop(){ const dt=Math.min(clk.getDelta(),0.05); controls.update(); collisionTick(); if(pickleFx) pickleFx.tick(dt);
   botList.forEach(b=>{ animBot(b,dt); const S=STATUS[b.busy?'talking':b.mode==='walk'?'walking':b.status];
     const tb=(b.status==='working'&&!b.busy&&b.mode==='sit')?tool(b.step):(b.mode==='walk'||b.busy?'':S.ic); const stp=b.step&&b.status!=='idle'?`<small class="st" style="display:block;max-width:${b._short?130:170}px;white-space:normal;line-height:1.2;opacity:.85">${esc(stepLine(b.step))}</small>`:''; const html=b._short?`<span class="np"><i style="background:${S.c}"></i>${esc(b.name)}${stp}</span>`:`${tb?`<span class="tool">${tb}</span>`:''}<span class="np"><i style="background:${S.c}"></i>${esc(b.name)}<small>${esc(b.role)}</small>${stp}</span>`; if(b.label._h!==html){ b.label.innerHTML=html; b.label._h=html; }
     placeDom(b.label,b.root,(b.mode==='sit'?1.95:2.2)+(b.status==='waiting_user'&&!b.busy?Math.abs(Math.sin(b.t*4))*0.25:0));
@@ -666,6 +692,36 @@ let fixed=false; const home=()=>{ controls.target.set(0,0,0); cam.position.set(3
 document.getElementById('camBtn').onclick=e=>{ fixed=!fixed; controls.enableRotate=!fixed; if(fixed) home(); e.target.textContent=fixed?'🎥 自由':'🎥 固定'; };
 document.getElementById('closeBtn').onclick=home;
 setInterval(buildTeam,1500);
-window.__office={bots:botList,setBotState,applyLooks,handle,setTime,startFlow,findBot,collision:COL,collisionStats:colStats,applyBotState,getBotState,onStateChange,net};
+/* ---------- pickleball idle trigger (programmer) ----------
+   API (window.__office.pickleball):
+     playSingles(names?) / playDoubles(names?) → {ok, match|error}
+     stopMatch() / getMatch() / setAutoIdle(bool) / onMatch(fn) / listEligible()
+     court / playerSlots(mode)  — geometry for Visual
+   Visual hooks: listen via onMatch(ev) or globalThis.onPickleEvent(ev)
+     ev.type = start|ready|rally|point|end|leave
+   Work priority: working / waiting_user / thinking / error pulls a bot off the court. */
+const pickleball=createPickleController({botList,getBotState,walkTo,say,addFeed,onStateChange,findBot,isBlocked:b=>inFlow.has(b)});
+pickleFx=createPickleFX({ scene, THREE, findBot, pickleball });
+pickleball.setAutoIdle(true, 24000);
+document.getElementById('pkSingles')?.addEventListener('click',()=>{
+  const r=pickleball.playSingles(); addFeed('系統', r.ok?`單打開始`:`單打失敗：${r.error}`, r.ok?'idle':'error');
+  if(r.ok){ controls.target.set(COURT.cx,0,COURT.cz); cam.zoom=Math.max(cam.zoom,1.6); cam.updateProjectionMatrix(); }
+});
+document.getElementById('pkDoubles')?.addEventListener('click',()=>{
+  const r=pickleball.playDoubles(); addFeed('系統', r.ok?`雙打開始`:`雙打失敗：${r.error}`, r.ok?'idle':'error');
+  if(r.ok){ controls.target.set(COURT.cx,0,COURT.cz); cam.zoom=Math.max(cam.zoom,1.6); cam.updateProjectionMatrix(); }
+});
+document.getElementById('pkStop')?.addEventListener('click',()=>{ const r=pickleball.stopMatch(); addFeed('系統', r.ok?'比賽結束':'冇比賽','idle'); });
+const pkQ=qp.get('pickle'); if(pkQ==='singles'||pkQ==='doubles') setTimeout(()=>{
+  const need=pkQ==='doubles'?4:2; let n=0;
+  for(const b of botList){ if(n>=need) break; if(b.busy||inFlow.has(b)||b.pickle) continue;
+    applyBotState(b,'idle','',{anim:false,ts:Date.now()}); n++; }
+  setTimeout(()=>{ const r=(pkQ==='doubles'?pickleball.playDoubles:pickleball.playSingles)();
+    if(r.ok){ controls.target.set(COURT.cx,0.4,COURT.cz); cam.position.set(28,26,34); cam.zoom=1.85; cam.updateProjectionMatrix(); controls.update(); }
+  }, 500);
+}, 1200);
+
+window.__office={bots:botList,setBotState,applyLooks,handle,setTime,startFlow,findBot,collision:COL,collisionStats:colStats,applyBotState,getBotState,onStateChange,net,pickleball,COURT,playerSlots,WORK_PRIORITY,pickleFx};
 if(qp.get('debug')==='collision') drawCollisionDebug();
+
 

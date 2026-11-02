@@ -1,5 +1,5 @@
 <!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<link rel="icon" href="data:,"><title>Roy 嘅 AI 辦公室</title><link rel="stylesheet" href="style.css?v=20261102c"></head><body>
+<link rel="icon" href="data:,"><title>Roy 嘅 AI 辦公室</title><link rel="stylesheet" href="style.css?v=20261102p"></head><body>
 <div id="app">
  <div id="stage"><canvas id="c"></canvas><div id="labels"></div>
   <div id="top">
@@ -10,6 +10,11 @@
   </div>
   <div id="legend"></div>
   <div id="timebar"><button data-t="now" class="on">🕒</button><button data-t="day">☀ 日</button><button data-t="evening">🌇 黃昏</button><button data-t="night">🌙 夜</button><button id="camBtn">🎥 固定</button></div>
+  <div id="picklebar">
+   <button id="pkSingles" title="兩個空閒 bot 單打">🏸 單打</button>
+   <button id="pkDoubles" title="四個空閒 bot 雙打">🏸 雙打</button>
+   <button id="pkStop" title="結束比賽">⏹ 完場</button>
+  </div>
   <button id="simbtn">⏹ 停止模擬</button>
  </div>
  <aside id="side">
@@ -27,5 +32,5 @@
  <div class="hint" id="dHint"></div>
  <div class="row end"><button id="dCancel">取消</button><button id="dGo" class="red">派工 ➤</button></div></div></div>
 <div id="confirm" class="modal hidden"><div class="box gold"><h3>⚠️ 需確認</h3><div id="cfWho"></div><div id="cfQ"></div><div class="row" id="cfBtns"></div></div></div>
-<script type="importmap">{"imports":{"three":"./vendor/three.module.js?v=20261102c"}}</script>
-<script type="module" src="app.js?v=20261102c"></script></body></html>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js?v=20261102p"}}</script>
+<script type="module" src="app.js?v=20261102p"></script></body></html>

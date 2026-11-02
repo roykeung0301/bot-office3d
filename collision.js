@@ -2,8 +2,10 @@
 // Pure JS (no three.js) so it can be unit-tested in node. Coordinates: world x / z.
 // Footprints mirror the furniture built in app.js ("furniture" section). Chairs, stools
 // and beanbag-style seats bots stand/sit at are intentionally NOT obstacles.
+// Pickleball net/posts/lines are appended via createCollision(desks, extra) from app.js
+// (keeps this file free of imports so node data-URL tests still work).
 
-export const ROOM = { minX: -15, maxX: 15, minZ: -11, maxZ: 11 };
+export const ROOM = { minX: -15, maxX: 15, minZ: -11, maxZ: 20 }; // +Z patio for pickleball
 export const BOT_R = 0.3;      // bot body radius used for clearance
 const CELL = 0.2;
 
@@ -43,15 +45,16 @@ export const STATIC_OBSTACLES = [
 
 // signed distance-ish test: is point inside obstacle grown by `pad`?
 export function insideObstacle(o, x, z, pad = 0) {
+  if (o.pass) return false;
   if (o.r !== undefined) return Math.hypot(x - o.x, z - o.z) < o.r + pad;
   let dx = x - o.x, dz = z - o.z;
   if (o.rot) { const c = Math.cos(-o.rot), s = Math.sin(-o.rot); [dx, dz] = [dx * c + dz * s, -dx * s + dz * c]; }
   return Math.abs(dx) < o.w / 2 + pad && Math.abs(dz) < o.d / 2 + pad;
 }
 
-export function createCollision(desks = []) {
-  // desks: [{x,z,rot}] desk tops 1.8 x 0.95
-  const obstacles = [...STATIC_OBSTACLES, ...desks.map((d, i) => ({ n: 'desk' + i, x: d.x, z: d.z, w: 1.8, d: 0.95, rot: d.rot || 0 }))];
+export function createCollision(desks = [], extra = []) {
+  // desks: [{x,z,rot}] desk tops 1.8 x 0.95; extra: pickleball net/posts/lines etc.
+  const obstacles = [...STATIC_OBSTACLES, ...desks.map((d, i) => ({ n: 'desk' + i, x: d.x, z: d.z, w: 1.8, d: 0.95, rot: d.rot || 0 })), ...extra];
   const NX = Math.round((ROOM.maxX - ROOM.minX) / CELL), NZ = Math.round((ROOM.maxZ - ROOM.minZ) / CELL);
   const blocked = new Uint8Array(NX * NZ);
   const cx = i => ROOM.minX + (i + 0.5) * CELL, cz = j => ROOM.minZ + (j + 0.5) * CELL;
@@ -122,5 +125,5 @@ export function createCollision(desks = []) {
   }
   // goal snapping for walkTo: only move a destination that is really inside furniture
   const safeGoal = (x, z) => hitAt(x, z, 0.1) ? nearestFree(x, z) : { x, z };
-  return { obstacles, plan, safeGoal, nearestFree, free, hitAt, clear, grid: { NX, NZ, CELL, blocked } };
+  return { obstacles, plan, safeGoal, nearestFree, free, hitAt, clear, grid: { NX, NZ, CELL, blocked }, lines: obstacles.filter(o => o.pass) };
 }
